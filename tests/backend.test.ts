@@ -10,6 +10,8 @@ import type {
 } from "learnharness-plugin-api";
 import { activate } from "../src/backend.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
+import { fillRequest } from "../src/prompts.ts";
+import { parseTemplate } from "../src/template.ts";
 import type { GeneratedMeme, MemeImage, PluginState } from "../src/types.ts";
 
 const cheap = { provider: "fixture", id: "cheap-model" };
@@ -422,6 +424,7 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 		cooldownGrowth: 2,
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
+		mode: "answer",
 	});
 	assert.equal(initial.pool.memegen, memegenMemes("").length);
 	assert.equal(initial.pool.custom, 2);
@@ -436,6 +439,10 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 	await assert.rejects(
 		first.call("save-settings", { imageBaseUrl: "ftp://x" }),
 		/http/,
+	);
+	await assert.rejects(
+		first.call("save-settings", { mode: "reflect" }),
+		/mode must be one of answer, hint, think/,
 	);
 	await assert.rejects(
 		first.call("save-settings", { surprise: true }),
@@ -650,4 +657,120 @@ test("the bundled catalogue is well formed", () => {
 				assert.ok(value >= 0 && value <= 1);
 	}
 	assert.ok(memegenMemes("").every((meme) => meme.image === ""));
+});
+
+// #17 meme modes
+
+test("Answer mode is unchanged: same fill request, same result shape, early reads refused", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const { call } = f.start();
+	await call("save-settings", offline);
+	assert.equal((await call<PluginState>("get-state")).settings.mode, "answer");
+	const concept = { prompt: "Who backed CUDA?", context: "GPU history" };
+	// Options are ignored in Answer mode.
+	const meme = await call<GeneratedMeme>("generate", {
+		...concept,
+		options: ["Jensen Huang", "Lisa Su"],
+	});
+	const expected = fillRequest({
+		meme: { name: "Proud speech" },
+		template: parseTemplate(templates["Proud speech"], custom[0]!.caption),
+		concept,
+		emphasis: true,
+	});
+	assert.equal(f.requests[1]!.context.systemPrompt, expected.systemPrompt);
+	assert.equal(f.requests[1]!.context.messages[0]!.content, expected.user);
+	assert.equal("mode" in meme, false);
+	assert.equal(meme.fact, "Jensen Huang backed CUDA.");
+	assert.deepEqual(meme.emphasis, { after: 1, text: "CUDA!!" });
+
+	await assert.rejects(
+		call("generate", { ...concept, early: true }),
+		/Reveal the question first/,
+	);
+	assert.equal(f.requests.length, 2, "no model call for a refused early read");
+});
+
+const hintReply = (request: PluginInferenceRequest): Reply =>
+	request.context.systemPrompt!.startsWith("You turn the caption")
+		? {}
+		: {
+				text: JSON.stringify({
+					values: {
+						achievement: "launched a GPU platform",
+						name: "the GeForce maker's boss",
+					},
+					emphasis: { after: 1, text: "CUDA!!" },
+					answer: "Jensen Huang",
+					fact: "Think of who runs the company behind GeForce.",
+				}),
+			};
+
+test("Hint mode reads early questions, hides its answer and drops emphasis", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: hintReply });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, mode: "hint" });
+	const meme = await call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+		options: ["Jensen Huang", "Lisa Su"],
+		early: true,
+	});
+	assert.equal(meme.mode, "hint");
+	assert.equal(meme.emphasis, null);
+	assert.deepEqual(meme.lines, [
+		"She launched a GPU platform is what she did. And on this floor, the GeForce maker's boss is a legend!",
+	]);
+	assert.equal(meme.fact, "Think of who runs the company behind GeForce.");
+	assert.ok(
+		!JSON.stringify(meme).includes("Jensen"),
+		"the model's answer is never returned",
+	);
+	assert.ok(!JSON.stringify(f.stored()).includes("Jensen"), "nor stored");
+	assert.match(f.requests[1]!.context.systemPrompt!, /gives a hint/);
+	assert.match(
+		String(f.requests[1]!.context.messages[0]!.content),
+		/have not seen it yet/,
+	);
+	await assert.rejects(
+		call("generate", { prompt: "x", options: "Jensen Huang | Lisa Su" }),
+		/answer options could not be read/,
+	);
+});
+
+test("a Think caption that gives the answer away is corrected once, then another meme is tried", async (t) => {
+	const leaking: Record<string, unknown> = {
+		"Proud speech": { achievement: "beat Lisa Su", name: "Jensen Huang" },
+		"Two panel": { rejected: "Lisa Su", preferred: "Jensen Huang" },
+	};
+	const f = fixture(t, {
+		reply: (request) =>
+			request.context.systemPrompt!.startsWith("You turn the caption")
+				? {}
+				: {
+						text: JSON.stringify({
+							values: leaking[f.memeOf(request)],
+							emphasis: null,
+							answer: "Jensen Huang",
+							fact: "Which one backed CUDA?",
+						}),
+					},
+	});
+	const { call } = f.start();
+	await call("save-settings", { ...offline, mode: "think" });
+	await assert.rejects(
+		call("generate", {
+			prompt: "Who backed CUDA?",
+			options: ["Jensen Huang", "Lisa Su"],
+		}),
+		(error: Error) =>
+			/gives the answer away/.test(error.message) &&
+			!error.message.includes("Jensen"),
+	);
+	const fills = f.requests.filter(
+		(request) =>
+			!request.context.systemPrompt!.startsWith("You turn the caption"),
+	);
+	assert.equal(fills.length, 4, "two memes, one correction each");
+	assert.match(fills[0]!.context.systemPrompt!, /only one is true/);
+	assert.deepEqual(f.stored().usage, {}, "no cooldown for a rejected meme");
 });

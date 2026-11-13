@@ -8,8 +8,10 @@ import type {
 	PluginModelSpec,
 } from "learnharness-plugin-api";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
+import { MEME_MODES } from "./config.ts";
 import { loadImage } from "./images.ts";
 import { loadCustomMemes, memegenMemes } from "./library.ts";
+import { modeFillRequest, parseModeFilling, readOptions } from "./modes.ts";
 import {
 	extractJson,
 	fillRequest,
@@ -22,6 +24,7 @@ import { applySettingsPatch, readSettings } from "./settings.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
 	Concept,
+	Filling,
 	GeneratedMeme,
 	Meme,
 	MemeImage,
@@ -296,6 +299,13 @@ export function activate(ctx: PluginBackendContext): () => void {
 		};
 		const exclude =
 			typeof value.excludeMemeId === "string" ? value.excludeMemeId : undefined;
+		// #17: the mode is the backend's stored setting, read once per meme. A question
+		// read before reveal is refused unless the mode allows it, before any model call.
+		const mode = state.settings.mode;
+		const early = value.early === true;
+		if (early && !(MEME_MODES.preReveal as readonly string[]).includes(mode))
+			throw new Error("Reveal the question first. A meme would show it early.");
+		const options = mode === "answer" ? [] : readOptions(value.options);
 
 		const model = await resolveModel();
 		const memes = pool().memes;
@@ -331,16 +341,34 @@ export function activate(ctx: PluginBackendContext): () => void {
 				continue;
 			}
 			// Steps 4 and 5.
-			const filling = await ask(
-				model,
-				fillRequest({
-					meme,
-					template,
-					concept,
-					emphasis: state.settings.emphasis,
-				}),
-				(raw) => parseFilling(raw, template),
-			);
+			let filling: Filling;
+			if (mode === "answer")
+				filling = await ask(
+					model,
+					fillRequest({
+						meme,
+						template,
+						concept,
+						emphasis: state.settings.emphasis,
+					}),
+					(raw) => parseFilling(raw, template),
+				);
+			else {
+				// #17 Hint and Think: a caption that gives the answer away is rejected;
+				// after one correction, try another meme.
+				try {
+					filling = await ask(
+						model,
+						modeFillRequest(mode, { meme, template, concept, early }),
+						(raw) => parseModeFilling(raw, template, options),
+					);
+				} catch (error) {
+					alive();
+					if (!(error instanceof RejectedReply)) throw error;
+					failure = error;
+					continue;
+				}
+			}
 			const emphasis = state.settings.emphasis ? filling.emphasis : null;
 			// "Once used, store it": only a meme that was actually produced starts its cooldown.
 			save({
@@ -370,6 +398,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 				values: filling.values,
 				emphasis,
 				fact: filling.fact,
+				...(mode === "answer" ? {} : { mode }),
 			};
 		}
 		throw failure instanceof Error

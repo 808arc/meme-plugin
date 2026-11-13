@@ -2,11 +2,18 @@
  * surface with the meme, plus the settings page. All state lives in the backend. */
 import type {
 	PluginFrontendContext,
+	PluginSessionViewContext,
 	PluginSettingsRow,
 	PluginSurfaceProps,
 	PluginWidgetHandle,
 } from "learnharness-plugin-api";
-import { type ConceptResult, conceptFromView } from "./concept.ts";
+import {
+	type ConceptResult,
+	conceptBeforeReveal,
+	conceptFromView,
+	optionLabels,
+} from "./concept.ts";
+import { MEME_MODES, type MemeMode } from "./config.ts";
 import { element, mountMeme } from "./render.ts";
 import { imageBaseUrlProblem, LIMITS } from "./settings.ts";
 import type {
@@ -30,6 +37,7 @@ function mountSurface(
 	container: HTMLElement,
 	signal: AbortSignal,
 	found: ConceptResult,
+	view: PluginSessionViewContext,
 ): () => void {
 	const root = element("div", "meme-plugin-surface");
 	const heading = element("h2", "meme-plugin-heading", "Meme");
@@ -49,6 +57,12 @@ function mountSurface(
 
 	let concept: Concept | null = found.status === "found" ? found.concept : null;
 	let result: GeneratedMeme | null = null;
+	// #17: option labels for the no-answer check (used by Hint and Think only), and
+	// whether the question was read before the learner revealed it.
+	const options = found.status === "found" ? optionLabels(view) : [];
+	let extra: { options?: string[]; early?: true } = options.length
+		? { options }
+		: {};
 	let sequence = 0;
 	let unmountMeme: (() => void) | null = null;
 
@@ -73,7 +87,9 @@ function mountSurface(
 		clear();
 		result = next;
 		unmountMeme = mountMeme(body, next, image);
-		fact.textContent = next.fact;
+		fact.textContent = next.mode
+			? `${MEME_MODES.labels[next.mode]}: ${next.fact}`
+			: next.fact;
 		credit.append(`Meme: ${next.meme.name}`);
 		if (next.meme.source && /^https?:\/\//.test(next.meme.source)) {
 			const link = element("a", "", "about this meme");
@@ -88,7 +104,10 @@ function mountSurface(
 		if (!concept) return;
 		const turn = ++sequence;
 		const stale = () => signal.aborted || turn !== sequence;
-		conceptLine.textContent = concept.prompt;
+		// Before reveal the question text stays off screen too.
+		conceptLine.textContent = extra.early
+			? "Before you reveal the question"
+			: concept.prompt;
 		another.update({ disabled: true });
 		copy.update({ disabled: true });
 		status("Picking a meme and writing the caption…");
@@ -96,6 +115,7 @@ function mountSurface(
 			// Asking again steers away from the meme that is on screen.
 			const next = await ctx.call<GeneratedMeme>("generate", {
 				...concept,
+				...extra,
 				...(result ? { excludeMemeId: result.meme.id } : {}),
 			});
 			if (stale()) return;
@@ -144,6 +164,7 @@ function mountSurface(
 
 	if (found.status === "hidden") {
 		status("Reveal the question first. A meme would show it early.");
+		void readBeforeReveal();
 	} else if (found.status === "none") {
 		status(
 			"No question found on this page. Type the concept to turn into a meme.",
@@ -165,6 +186,7 @@ function mountSurface(
 				onSend: () => {
 					if (!text.trim()) return;
 					concept = { prompt: text.trim() };
+					extra = {};
 					result = null;
 					return run();
 				},
@@ -172,6 +194,31 @@ function mountSurface(
 			{ signal },
 		);
 	} else void run();
+
+	/** #17: only Hint and Think read an unrevealed question, through the whitelisted
+	 * path in concept.ts. Any failure leaves the "reveal first" message (Answer). */
+	async function readBeforeReveal() {
+		let mode: MemeMode | undefined;
+		try {
+			mode = (await ctx.call<PluginState>("get-state")).settings.mode;
+		} catch {
+			return;
+		}
+		if (
+			signal.aborted ||
+			!mode ||
+			!(MEME_MODES.preReveal as readonly string[]).includes(mode)
+		)
+			return;
+		const early = conceptBeforeReveal(view);
+		if (!early) return;
+		concept = early.concept;
+		extra = {
+			early: true,
+			...(early.options.length ? { options: early.options } : {}),
+		};
+		await run();
+	}
 
 	return () => {
 		sequence++;
@@ -186,6 +233,19 @@ function settingsRows(
 	save: (patch: Partial<Settings>) => Promise<void>,
 ): PluginSettingsRow[] {
 	return [
+		{
+			type: "dropdown",
+			key: "mode",
+			label: "Meme mode",
+			description:
+				"Answer states the fact. Hint points at it without saying it. Think asks you to pick before the answer shows. Hint and Think also work before you reveal the question.",
+			value: settings.mode,
+			options: MEME_MODES.modes.map((value) => ({
+				value,
+				label: MEME_MODES.labels[value],
+			})),
+			onChange: (mode) => save({ mode: mode as MemeMode }),
+		},
 		{
 			type: "toggle",
 			key: "emphasis",
@@ -363,7 +423,13 @@ export function activate(ctx: PluginFrontendContext): void {
 				{
 					title: "Meme",
 					content: (container, signal) => {
-						const unmount = mountSurface(ctx, container, signal, found);
+						const unmount = mountSurface(
+							ctx,
+							container,
+							signal,
+							found,
+							context.view,
+						);
 						// Runs on user close, navigation away and plugin disable alike.
 						return () => {
 							unmount();

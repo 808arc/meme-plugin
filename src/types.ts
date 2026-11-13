@@ -1,4 +1,5 @@
 /** Shapes shared by the backend, the frontend and the tests. JSON-compatible only. */
+import type { MemeMode } from "./config.ts";
 
 /** Where one caption line is drawn, as fractions of the image (memegen's model). */
 export interface Box {
@@ -77,7 +78,10 @@ export interface GeneratedMeme {
 	lines: string[];
 	values: Record<string, string>;
 	emphasis: Emphasis | null;
+	/** Answer mode: the fact. Hint: the hint. Think: the question to the learner. */
 	fact: string;
+	/** #17: present only for Hint and Think, so Answer results stay as before. */
+	mode?: Exclude<MemeMode, "answer">;
 }
 
 export interface Settings {
@@ -93,6 +97,8 @@ export interface Settings {
 	useMemegen: boolean;
 	/** Where blank memegen images come from. Empty: never fetch, show text only. */
 	imageBaseUrl: string;
+	/** #17: what the caption does. Answer states the fact (default). */
+	mode: MemeMode;
 }
 
 export interface Usage {

@@ -2,6 +2,10 @@
 
 Turns each concept asked by learnharness about into a meme.
 
+> **Status:** early build. Only the catalogue and generation work today. Most features in
+> [Planned](#planned) are design only. Research findings are unverified until checked
+> ([docs](#research)).
+
 ## How it works
 
 1. Take the concept from the learnharness prompt.
@@ -139,6 +143,7 @@ Bad entries skipped, listed in settings. Changes apply next meme; no restart.
 - The image server receives only the meme's id (for example `/images/drake.jpg`), once
   per meme. Images are cached in `data/image-cache/`.
 - Nothing else. Writes only in `data/`. Learning records untouched.
+- Planned: web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme-plugin/issues/11)). A settings switch turns it off.
 
 ## Development
 

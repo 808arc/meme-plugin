@@ -13,17 +13,26 @@ const TIMEOUT_MS = 15_000;
 
 /** Decide the type from the bytes, not from a header or a file name. */
 export function sniff(bytes: Uint8Array): string | undefined {
-	const starts = (...signature: number[]) => signature.every((byte, index) => bytes[index] === byte);
+	const starts = (...signature: number[]) =>
+		signature.every((byte, index) => bytes[index] === byte);
 	if (starts(0x89, 0x50, 0x4e, 0x47)) return "image/png";
 	if (starts(0xff, 0xd8, 0xff)) return "image/jpeg";
 	if (starts(0x47, 0x49, 0x46, 0x38)) return "image/gif";
-	if (starts(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp";
+	if (
+		starts(0x52, 0x49, 0x46, 0x46) &&
+		bytes[8] === 0x57 &&
+		bytes[9] === 0x45 &&
+		bytes[10] === 0x42 &&
+		bytes[11] === 0x50
+	)
+		return "image/webp";
 	return undefined;
 }
 
 function encode(bytes: Buffer): MemeImage {
 	const mimeType = sniff(bytes);
-	if (!mimeType) throw new Error("The file is not a PNG, JPEG, GIF or WebP image");
+	if (!mimeType)
+		throw new Error("The file is not a PNG, JPEG, GIF or WebP image");
 	return { mimeType, data: bytes.toString("base64") };
 }
 
@@ -35,8 +44,12 @@ function readBounded(file: string): Buffer {
 }
 
 async function download(url: string, signal: AbortSignal): Promise<Buffer> {
-	const response = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]), redirect: "follow" });
-	if (!response.ok) throw new Error(`Image request failed (${response.status})`);
+	const response = await fetch(url, {
+		signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]),
+		redirect: "follow",
+	});
+	if (!response.ok)
+		throw new Error(`Image request failed (${response.status})`);
 	const declared = Number(response.headers.get("content-length"));
 	if (declared > MAX_BYTES) throw new Error("Image is larger than 8 MiB");
 	const bytes = Buffer.from(await response.arrayBuffer());
@@ -44,23 +57,41 @@ async function download(url: string, signal: AbortSignal): Promise<Buffer> {
 	return bytes;
 }
 
-export async function loadImage(meme: Pick<Meme, "image" | "origin">, dataDirectory: string, signal: AbortSignal): Promise<MemeImage | null> {
+export async function loadImage(
+	meme: Pick<Meme, "image" | "origin">,
+	dataDirectory: string,
+	signal: AbortSignal,
+): Promise<MemeImage | null> {
 	if (!meme.image) return null;
 	if (!/^https?:\/\//.test(meme.image)) {
 		// The library only admits bare file names here; recheck before touching the disk.
-		if (meme.origin !== "custom" || !IMAGE_FILE.test(meme.image)) throw new Error("Unsupported image location");
-		return encode(readBounded(path.join(dataDirectory, CUSTOM_IMAGES, meme.image)));
+		if (meme.origin !== "custom" || !IMAGE_FILE.test(meme.image))
+			throw new Error("Unsupported image location");
+		return encode(
+			readBounded(path.join(dataDirectory, CUSTOM_IMAGES, meme.image)),
+		);
 	}
 	const cache = path.join(dataDirectory, IMAGE_CACHE);
-	const file = path.join(cache, createHash("sha256").update(meme.image).digest("hex").slice(0, 32));
-	try { return encode(readBounded(file)); }
-	catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") fs.rmSync(file, { force: true }); }
+	const file = path.join(
+		cache,
+		createHash("sha256").update(meme.image).digest("hex").slice(0, 32),
+	);
+	try {
+		return encode(readBounded(file));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+			fs.rmSync(file, { force: true });
+	}
 	const bytes = await download(meme.image, signal);
 	const image = encode(bytes);
 	if (signal.aborted) throw new Error("Meme plugin is disabled.");
 	fs.mkdirSync(cache, { recursive: true });
 	const temporary = path.join(cache, `.${randomUUID()}.tmp`);
-	try { fs.writeFileSync(temporary, bytes, { flag: "wx" }); fs.renameSync(temporary, file); }
-	finally { fs.rmSync(temporary, { force: true }); }
+	try {
+		fs.writeFileSync(temporary, bytes, { flag: "wx" });
+		fs.renameSync(temporary, file);
+	} finally {
+		fs.rmSync(temporary, { force: true });
+	}
 	return image;
 }

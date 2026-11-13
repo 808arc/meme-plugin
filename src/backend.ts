@@ -22,9 +22,11 @@ import {
 	chooseReuse,
 	conceptKey,
 	mayReuse,
+	newEntry,
 	readGenerated,
 	recordFresh,
 	recordReuse,
+	type StoredMeme,
 	writeGenerated,
 } from "./reuse.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
@@ -286,6 +288,16 @@ export function activate(ctx: PluginBackendContext): () => void {
 		return template;
 	}
 
+	/** "Once used, store it": start or extend the meme's cooldown. */
+	const markUsed = (id: string) =>
+		save({
+			...state,
+			usage: {
+				...state.usage,
+				[id]: recordUse(state.usage[id], Date.now(), state.settings),
+			},
+		});
+
 	async function generate(input: unknown): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
@@ -306,26 +318,34 @@ export function activate(ctx: PluginBackendContext): () => void {
 		const exclude =
 			typeof value.excludeMemeId === "string" ? value.excludeMemeId : undefined;
 
-		const model = await resolveModel();
 		const memes = pool().memes;
-		if (!memes.length)
-			throw new Error(
-				"The meme pool is empty. Enable the bundled catalogue or add custom memes.",
-			);
-		// Before any paid request: an earlier meme for this concept, if the reuse share allows.
-		const store = readGenerated(ctx.dataDirectory);
+		// Before any model is needed: an earlier meme for this concept, if this
+		// concept's reuse share allows. A reuse counts as a use for the cooldown.
 		const key = conceptKey(prompt);
-		const earlier = mayReuse(store)
+		const store = readGenerated(ctx.dataDirectory);
+		const earlier = mayReuse(store.concepts[key])
 			? chooseReuse(
-					store.entries[key] ?? [],
+					store.concepts[key]?.memes ?? [],
 					new Set(memes.map((meme) => meme.id)),
 					exclude,
 				)
 			: undefined;
 		if (earlier) {
-			writeGenerated(ctx.dataDirectory, recordReuse(store));
-			return { ...earlier.meme, concept, reused: true };
+			markUsed(earlier.meme.meme.id);
+			writeGenerated(ctx.dataDirectory, recordReuse(store, key));
+			return {
+				...earlier.meme,
+				concept,
+				generatedId: earlier.id,
+				reused: true,
+			};
 		}
+
+		const model = await resolveModel();
+		if (!memes.length)
+			throw new Error(
+				"The meme pool is empty. Enable the bundled catalogue or add custom memes.",
+			);
 		const tried = new Set<string>([...unusable, ...(exclude ? [exclude] : [])]);
 		// Never let exclusions empty the pool: a repeat beats no meme.
 		if (memes.every((meme) => tried.has(meme.id))) tried.clear();
@@ -366,18 +386,8 @@ export function activate(ctx: PluginBackendContext): () => void {
 			);
 			const emphasis = state.settings.emphasis ? filling.emphasis : null;
 			// "Once used, store it": only a meme that was actually produced starts its cooldown.
-			save({
-				...state,
-				usage: {
-					...state.usage,
-					[meme.id]: recordUse(
-						state.usage[meme.id],
-						Date.now(),
-						state.settings,
-					),
-				},
-			});
-			const generated: GeneratedMeme = {
+			markUsed(meme.id);
+			const stored: StoredMeme = {
 				meme: {
 					id: meme.id,
 					origin: meme.origin,
@@ -386,7 +396,6 @@ export function activate(ctx: PluginBackendContext): () => void {
 					boxes: meme.boxes,
 					hasImage: !!meme.image,
 				},
-				concept,
 				originalCaption: meme.caption,
 				templateLines: template.lines,
 				lines: assemble(template, filling.values, emphasis),
@@ -394,12 +403,13 @@ export function activate(ctx: PluginBackendContext): () => void {
 				emphasis,
 				fact: filling.fact,
 			};
-			const { concept: _asked, ...stored } = generated;
+			const entry = newEntry(stored, Date.now());
+			// Re-read: a rating may have been written while the model was answering.
 			writeGenerated(
 				ctx.dataDirectory,
-				recordFresh(store, key, stored, Date.now()),
+				recordFresh(readGenerated(ctx.dataDirectory), key, entry),
 			);
-			return generated;
+			return { ...stored, concept, generatedId: entry.id };
 		}
 		throw failure instanceof Error
 			? failure

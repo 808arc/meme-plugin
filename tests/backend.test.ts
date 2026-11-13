@@ -661,14 +661,32 @@ test("a repeated concept reuses an earlier meme once the reuse share allows it",
 	for (let index = 0; index < 4; index++)
 		fresh.push(await call<GeneratedMeme>("generate", asked));
 	assert.ok(fresh.every((meme) => meme.reused === undefined));
+	assert.equal(new Set(fresh.map((meme) => meme.generatedId)).size, 4);
 	const requestsBefore = f.requests.length;
+	const usesBefore = f.stored().usage["custom:proud-speech"].uses;
+	// Reuse needs no model: pin one the host does not offer.
+	await call("save-settings", {
+		model: { provider: "fixture", id: "missing-model" },
+	});
 	const reused = await call<GeneratedMeme>("generate", {
 		prompt: "who backed cuda",
 	});
 	assert.equal(reused.reused, true);
 	assert.equal(f.requests.length, requestsBefore, "no model call for a reuse");
+	assert.ok(fresh.some((meme) => meme.generatedId === reused.generatedId));
 	assert.deepEqual(reused.lines, fresh[0]!.lines);
 	assert.deepEqual(reused.concept, { prompt: "who backed cuda" });
+	assert.equal(
+		f.stored().usage["custom:proud-speech"].uses,
+		usesBefore + 1,
+		"a reuse counts as a use",
+	);
+	// The share is per concept: another question has no history, so it needs the model.
+	await assert.rejects(
+		call("generate", { prompt: "What is OpenCL?" }),
+		/not available/,
+	);
+	await call("save-settings", { model: null });
 	// Asked to replace the meme on screen: a new generation, not the same one.
 	const replaced = await call<GeneratedMeme>("generate", {
 		...asked,
@@ -679,6 +697,13 @@ test("a repeated concept reuses an earlier meme once the reuse share allows it",
 	const store = JSON.parse(
 		fs.readFileSync(path.join(f.dataDirectory, "generated-memes.json"), "utf8"),
 	);
-	assert.equal(store.reused, 1);
-	assert.equal(store.fresh, 5);
+	const records = Object.values(store.concepts) as {
+		fresh: number;
+		reused: number;
+		memes: unknown[];
+	}[];
+	assert.equal(records.length, 1);
+	assert.equal(records[0]!.reused, 1);
+	assert.equal(records[0]!.fresh, 5);
+	assert.equal(records[0]!.memes.length, 5);
 });

@@ -2,12 +2,13 @@
  * Bundled memegen metadata plus the learner's own memes in plugin data. */
 import fs from "node:fs";
 import path from "node:path";
-import catalogue from "./data/memegen-templates.json" with { type: "json" };
 import {
 	hiddenByDefault,
 	isDated,
 	type TemplateTags,
 } from "./catalogue-tags.ts";
+import catalogue from "./data/memegen-templates.json" with { type: "json" };
+import { isMissingFile } from "./fs-errors.ts";
 import type { Box, Meme } from "./types.ts";
 
 export const CUSTOM_FILE = "custom-memes.json";
@@ -185,8 +186,7 @@ export function loadCustomMemes(dataDirectory: string): {
 	try {
 		text = fs.readFileSync(path.join(dataDirectory, CUSTOM_FILE), "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT")
-			return { memes: [], problems: [] };
+		if (isMissingFile(error)) return { memes: [], problems: [] };
 		return {
 			memes: [],
 			problems: [`${CUSTOM_FILE}: ${(error as Error).message}`],

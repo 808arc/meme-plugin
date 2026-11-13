@@ -7,6 +7,7 @@ import {
 	SHUFFLE_SEQUENCE,
 } from "./config.ts";
 import type { ModelRequest } from "./prompts.ts";
+import { numbered } from "./prompts.ts";
 import {
 	assemble,
 	cleanText,
@@ -54,9 +55,6 @@ const NOTE: Record<QuestionMode, string> = {
 	think:
 		"the question the learner must answer, as one plain sentence (for example: Which panel is true?), without the answer",
 };
-
-const numbered = (lines: readonly string[]) =>
-	lines.map((line, index) => `${index + 1}. ${line || "(empty)"}`).join("\n");
 
 /** Hint or Think caption request. Emphasis is always off: it repeats the key term. */
 export function modeFillRequest(

@@ -11,14 +11,14 @@ import type {
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
 import {
 	BUTTONLESS,
+	type ConcreteMode,
 	FACT_CHECK,
 	MEME_MODES,
+	type MemeMode,
 	type MemeStage,
 	OWN_MEMES,
 	PICK_STEP,
 	STAGE_TOPIC,
-	type ConcreteMode,
-	type MemeMode,
 	TEACHER_TOOL,
 } from "./config.ts";
 import {
@@ -27,6 +27,7 @@ import {
 	parseAnswer,
 	quickAgreement,
 } from "./factcheck.ts";
+import { isMissingFile } from "./fs-errors.ts";
 import { loadImage } from "./images.ts";
 import {
 	CUSTOM_FILE,
@@ -70,8 +71,6 @@ import {
 	recordUse,
 	shortlist,
 } from "./scheduler.ts";
-import { applySettingsPatch, readSettings } from "./settings.ts";
-import { type Fetch, searchAgentFor, tavilyKey } from "./tavily.ts";
 import {
 	judgeRequest,
 	parseJudgement,
@@ -80,6 +79,8 @@ import {
 	verdict,
 	webMeme,
 } from "./search.ts";
+import { applySettingsPatch, readSettings } from "./settings.ts";
+import { type Fetch, searchAgentFor, tavilyKey } from "./tavily.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
 	AutomaticResult,
@@ -151,7 +152,7 @@ function readState(file: string): Stored {
 	try {
 		raw = JSON.parse(fs.readFileSync(file, "utf8"));
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT")
+		if (isMissingFile(error))
 			return {
 				version: STATE_VERSION,
 				settings: readSettings(undefined),
@@ -825,7 +826,7 @@ export function activate(
 		try {
 			list = fs.readFileSync(path.join(source, CUSTOM_FILE));
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT")
+			if (isMissingFile(error))
 				throw new Error(`There are no custom memes to export in ${source}.`);
 			throw error;
 		}

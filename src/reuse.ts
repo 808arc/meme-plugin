@@ -15,6 +15,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { REUSE } from "./config.ts";
+import { isMissingFile } from "./fs-errors.ts";
 import type { GeneratedMeme } from "./types.ts";
 
 export const GENERATED_FILE = "generated-memes.json";
@@ -73,8 +74,7 @@ export function readGenerated(dataDirectory: string): GeneratedStore {
 			fs.readFileSync(path.join(dataDirectory, GENERATED_FILE), "utf8"),
 		);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT")
-			return { version: VERSION, concepts: {} };
+		if (isMissingFile(error)) return { version: VERSION, concepts: {} };
 		throw new Error(
 			`Meme plugin could not read ${GENERATED_FILE}: ${(error as Error).message}`,
 		);

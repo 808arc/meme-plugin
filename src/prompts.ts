@@ -15,7 +15,7 @@ export interface ModelRequest {
 	user: string;
 }
 
-const numbered = (lines: readonly string[]) =>
+export const numbered = (lines: readonly string[]) =>
 	lines.map((line, index) => `${index + 1}. ${line || "(empty)"}`).join("\n");
 
 /** Step 2: choose, from candidate memes, the one whose joke structure fits the concept. */

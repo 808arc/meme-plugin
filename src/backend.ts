@@ -8,6 +8,7 @@ import type {
 	PluginModelSpec,
 } from "learnharness-plugin-api";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
+import { PICK_STEP } from "./config.ts";
 import { loadImage } from "./images.ts";
 import { loadCustomMemes, memegenMemes } from "./library.ts";
 import {
@@ -37,8 +38,6 @@ const STATE_FILE = "state.json";
 /** A meme whose caption cannot be templated is skipped; try this many before giving up. */
 const MEME_ATTEMPTS = 3;
 const MAX_OUTPUT_TOKENS = 2048;
-/** How many memes the pick step sees at most. */
-const PICK_CANDIDATES = 20;
 
 interface CachedTemplate extends Template {
 	captionHash: string;
@@ -253,7 +252,12 @@ export function activate(ctx: PluginBackendContext): () => void {
 		ids: readonly string[],
 		memes: readonly Meme[],
 	): Promise<string | undefined> {
-		const candidates = shortlist(ids, state.usage, Date.now(), PICK_CANDIDATES);
+		const candidates = shortlist(
+			ids,
+			state.usage,
+			Date.now(),
+			PICK_STEP.candidates,
+		);
 		if (candidates.length < 2) return candidates[0];
 		const listed = candidates.map((id) => memes.find((m) => m.id === id)!);
 		try {

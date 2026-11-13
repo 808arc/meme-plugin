@@ -626,7 +626,8 @@ export function activate(
 		stage("selecting");
 		// Before any model is needed: an earlier meme for this concept, if this
 		// concept's reuse share allows. A reuse counts as a use for the cooldown.
-		const key = conceptKey(prompt);
+		// The mode is part of the key: a meme made in one mode is never reused in another.
+		const key = `${mode}:${conceptKey(prompt)}`;
 		const store = readGenerated(ctx.dataDirectory);
 		const earlier = mayReuse(store.concepts[key])
 			? chooseReuse(

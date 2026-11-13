@@ -1631,3 +1631,38 @@ test("fix(I): templates cached by an older prompt version are rebuilt", async (t
 		);
 	assert.equal(templateCalls.length, 1, "the stale template is asked again");
 });
+
+test("fix(C): a meme made in one mode is never reused in another", async (t) => {
+	const hintJson = JSON.stringify({
+		values: {
+			achievement: "launched a GPU platform",
+			name: "the GeForce maker's boss",
+		},
+		emphasis: null,
+		answer: "Jensen Huang",
+		fact: "Think of who runs the company behind GeForce.",
+	});
+	const f = fixture(t, {
+		memes: [custom[0]],
+		reply: (request) => {
+			const system = request.context.systemPrompt!;
+			if (system.startsWith("You turn the caption")) return {};
+			if (system.startsWith("You check one study fact"))
+				return { text: '{"agrees": true}' };
+			if (system.includes("gives a hint")) return { text: hintJson };
+			return {};
+		},
+	});
+	const { call } = f.start();
+	await call("save-settings", { ...offline, cooldownDays: 0 });
+	for (let index = 0; index < 4; index++)
+		await call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
+	await call("save-settings", { mode: "hint" });
+	const before = f.requests.length;
+	const hint = await call<GeneratedMeme>("generate", {
+		prompt: "who backed cuda",
+	});
+	assert.equal(hint.reused, undefined, "the Answer memes are not reused");
+	assert.equal(hint.mode, "hint");
+	assert.ok(f.requests.length > before, "a fresh hint is written");
+});

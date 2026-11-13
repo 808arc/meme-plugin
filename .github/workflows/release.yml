@@ -1,0 +1,57 @@
+name: Release
+
+# Push a tag matching the package version, e.g.:
+#   git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  # Full CI gate first: a tag never publishes a red build.
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check tag matches package.json and manifest.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p 'require("./package.json").version')"
+          man="$(node -p 'require("./manifest.json").version')"
+          echo "tag=$tag package.json=$pkg manifest.json=$man"
+          [ "$tag" = "$pkg" ] && [ "$tag" = "$man" ] || { echo "::error::Version mismatch"; exit 1; }
+      - run: cp -r learnharness-plugins/types .sdk
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      # Archive mirrors the installed layout: <plugins-directory>/meme-plugin/dist/...
+      - name: Package
+        id: package
+        run: |
+          stage="$(mktemp -d)"
+          node scripts/install-plugin-local.mjs "$stage"
+          asset="meme-plugin-${GITHUB_REF_NAME}.zip"
+          (cd "$stage" && zip -qr "$GITHUB_WORKSPACE/$asset" meme-plugin)
+          sha256sum "$asset" > "$asset.sha256"
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ steps.package.outputs.asset }}" \
+            "${{ steps.package.outputs.asset }}.sha256" \
+            --title "meme-plugin $GITHUB_REF_NAME" \
+            --generate-notes

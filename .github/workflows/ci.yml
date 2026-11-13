@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+  # Reused by release.yml so a tag only publishes after the same checks pass.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Dependency audit (high+)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      # Fails on high/critical advisories. Fix locally with `npm audit fix`, then commit the lockfile.
+      - run: npm audit --audit-level=high
+
+  check:
+    name: Typecheck, test, build (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # learnharness-plugin-api is a local file dependency (file:.sdk).
+      - run: cp -r learnharness-plugins/types .sdk
+      - run: npm ci --no-audit --no-fund
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Smoke-check the built package with the portable installer (validates manifest + files).
+      - name: Validate package with installer
+        run: |
+          plugins="$(mktemp -d)"
+          node scripts/install-plugin-local.mjs "$plugins"
+          test -f "$plugins/meme-plugin/dist/manifest.json"
+      - name: Upload build
+        if: matrix.node == 22
+        uses: actions/upload-artifact@v4
+        with:
+          name: meme-plugin-dist
+          path: dist/
+          retention-days: 14

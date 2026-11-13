@@ -1666,3 +1666,43 @@ test("fix(C): a meme made in one mode is never reused in another", async (t) => 
 	assert.equal(hint.mode, "hint");
 	assert.ok(f.requests.length > before, "a fresh hint is written");
 });
+
+test("fix(B): the fact check runs only in Answer mode", async (t) => {
+	const hintJson = JSON.stringify({
+		values: {
+			achievement: "launched a GPU platform",
+			name: "the GeForce maker's boss",
+		},
+		emphasis: null,
+		answer: "Jensen Huang",
+		fact: "Think of who runs the company behind GeForce.",
+	});
+	const f = fixture(t, {
+		memes: [custom[0]],
+		reply: (request) => {
+			const system = request.context.systemPrompt!;
+			if (system.startsWith("You turn the caption")) return {};
+			if (system.includes("gives a hint")) return { text: hintJson };
+			return {};
+		},
+	});
+	const { call } = f.start();
+	await call("save-settings", { ...offline, mode: "hint" });
+	await call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
+	const checks = f.requests.filter((request) =>
+		request.context.systemPrompt!.startsWith("You check one study fact"),
+	);
+	assert.equal(checks.length, 0, "a hint is never rejected by the fact check");
+	await call("save-settings", { mode: "answer" });
+	const answer = await call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	assert.equal(answer.mode, undefined);
+	assert.equal(
+		f.requests.filter((request) =>
+			request.context.systemPrompt!.startsWith("You check one study fact"),
+		).length,
+		1,
+		"Answer mode runs the check",
+	);
+});

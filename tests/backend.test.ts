@@ -1176,6 +1176,8 @@ async function webFixture(
 						fact: "Think of the company's founder.",
 					}),
 				};
+			if (request.context.systemPrompt!.startsWith("You check one study fact"))
+				return { text: '{"agrees": true}' };
 			if (!request.context.systemPrompt!.startsWith("You judge")) return {};
 			const answer = judge(String(request.context.messages[0]!.content));
 			if (answer === "error")
@@ -1809,4 +1811,15 @@ test("fix(F): the search stage is reported only when a search runs", async (t) =
 		),
 		"no search stage in Hint",
 	);
+});
+
+test("fix(A): an earlier meme is reused before any web search", async (t) => {
+	const w = await webFixture(t, []);
+	await w.call("save-settings", { cooldownDays: 0 });
+	for (let index = 0; index < 4; index++)
+		await w.call<GeneratedMeme>("generate", ask);
+	assert.equal(w.searches.length, 4, "each fresh generation searched first");
+	const reused = await w.call<GeneratedMeme>("generate", ask);
+	assert.equal(reused.reused, true);
+	assert.equal(w.searches.length, 4, "the reuse made no search");
 });

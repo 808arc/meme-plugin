@@ -577,8 +577,17 @@ export function activate(
 		return null;
 	}
 
-	/** One meme for one question. `mode` is passed in, never read from settings here:
-	 * automatic callers (teacher tool, buttonless) always pass "answer". */
+	/** One meme for one question. Pipeline, in order; each step stops at its first hit:
+	 *  1. reuse an earlier meme for the same question and mode (#9);
+	 *  2. web search for an existing meme (#11): Answer mode only, and only when
+	 *     enabled and a search agent is configured;
+	 *  3. template: own memes first by the own-memes share (#21), then the catalogue,
+	 *     through the pick step (#4); templates are cached per meme;
+	 *  4. caption: fill the template (#4 humor rule; #17 mode prompts);
+	 *  5. check: Answer runs the fact check (#7); Hint and Think run the no-answer
+	 *     check (#17).
+	 * `mode` is passed in, never read from settings here: automatic callers (teacher
+	 * tool, buttonless) always pass "answer". */
 	async function generate(
 		input: unknown,
 		purpose: PluginCallPurpose,

@@ -237,3 +237,24 @@ export function lastAnsweredQuestion(
 	}
 	return null;
 }
+
+/** #38: the question on screen that is asked but not revealed yet. The key matches the
+ * key `lastAnsweredQuestion` gives the same question once answered. Null when no such
+ * question is pending, or when the host gives no occurrence to key it by. */
+export function pendingQuestion(
+	view: PluginSessionViewContext,
+): { key: string; early: EarlyRead } | null {
+	const input = view.input;
+	if (
+		(input.type !== "answer" && input.type !== "plugin-question-answer") ||
+		input.revealed
+	)
+		return null;
+	const occurrence = (
+		input.question as { occurrence?: { toolCallId?: unknown } } | undefined
+	)?.occurrence;
+	if (typeof occurrence?.toolCallId !== "string") return null;
+	const early = conceptBeforeReveal(view);
+	if (!early) return null;
+	return { key: `${view.sessionId}:${occurrence.toolCallId}`, early };
+}

@@ -1010,3 +1010,109 @@ test("settings say when today's automatic budget is used up", async (t) => {
 		/automatic memes are used up.*Meme this still works/,
 	);
 });
+
+// #38 chat-triggered memes: asked when the question appears, never the answer key.
+const pending = {
+	type: "answer",
+	revealed: false,
+	question: {
+		question: "Who backed CUDA?",
+		options: [
+			{ label: "Jensen Huang", value: "a" },
+			{ label: "Lisa Su", value: "b" },
+		],
+		correctIndices: [0],
+		occurrence: {
+			messageId: "m1",
+			contentIndex: 0,
+			toolCallId: "q1",
+			toolName: "quiz",
+		},
+	},
+};
+
+test("#38 asked trigger: a pending question sends Hint/Think input only, never the answer key", async (t) => {
+	const sent: unknown[] = [];
+	const f = fixture(t, automaticBackend("asked", sent));
+	f.render({});
+	await settle();
+	f.render({ input: pending });
+	await settle();
+	assert.deepEqual(sent, [
+		{
+			key: "s:q1",
+			asked: true,
+			prompt: "Who backed CUDA?",
+			context: "Answer options the learner will see: Jensen Huang | Lisa Su",
+			options: ["Jensen Huang", "Lisa Su"],
+		},
+	]);
+	assert.ok(
+		!JSON.stringify(sent).includes("correct"),
+		"the answer key never leaves the page",
+	);
+	assert.equal(f.surfaces.length, 1);
+	const fold = f.surfaces[0]!.container.querySelector(
+		".meme-plugin-fold",
+	) as HTMLElement;
+	assert.equal(fold.hidden, true, "folded, as for every automatic meme");
+});
+
+test("#38 asked trigger: one automatic meme per question, and never once revealed", async (t) => {
+	const sent: unknown[] = [];
+	const f = fixture(t, automaticBackend("asked", sent));
+	f.render({});
+	await settle();
+	f.render({ input: pending });
+	f.render({ input: pending });
+	await settle();
+	assert.equal(
+		sent.length,
+		1,
+		"repeat renders of the same question: one request",
+	);
+	// Once the learner answers, the reveal trigger is off: no asked request either.
+	f.render({
+		input: { ...pending, revealed: true },
+		messages: [answered("q1")],
+	});
+	f.render({ input: { type: "text" } });
+	await settle();
+	assert.equal(sent.length, 1);
+});
+
+test("#38 asked trigger: only the setting's own trigger, and only on a pending question", async (t) => {
+	const sent: unknown[] = [];
+	const reveal = fixture(t, automaticBackend("every", sent));
+	reveal.render({});
+	await settle();
+	reveal.render({ input: pending });
+	await settle();
+	assert.deepEqual(sent, [], "reveal trigger ignores a pending question");
+
+	const asking = fixture(t, automaticBackend("asked", sent));
+	asking.render({});
+	await settle();
+	asking.render({ input: { type: "text" } });
+	asking.render({ input: { ...pending, revealed: true } });
+	await settle();
+	assert.deepEqual(sent, [], "no pending question, no request");
+});
+
+test("#38 settings: Automatic memes lists the reveal and asked triggers, off by default", async (t) => {
+	const f = fixture(t, () => state);
+	const container = f.document.createElement("div");
+	f.mountSettings(container);
+	await settle();
+	const rows = (
+		f.widgets.find((entry) => entry.kind === "rows")!
+			.props as unknown as PluginSettingsSchema
+	).rows;
+	const row = rows.find((entry) => entry.key === "automaticMemes")!;
+	assert.equal(row.type, "dropdown");
+	assert.equal(row.value, "off");
+	assert.deepEqual(
+		row.type === "dropdown" ? row.options.map((option) => option.value) : [],
+		["off", "every", "nth", "wrong", "asked", "asked-nth"],
+	);
+});

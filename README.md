@@ -57,7 +57,7 @@ A chord for **Meme this** is set in Settings → Keyboard. It is unbound until y
 ### Good to know
 
 - The meme states the answer. Open it after you have tried the question, not before.
-- An unrevealed question is not read.
+- An unrevealed question is not read, except by Hint, Think and the asked-question trigger.
 - No question on screen: the plugin uses the teacher's latest message, or asks you to type a concept.
 - Each meme costs one short model request. The first use of a given meme costs one more, to cache its template.
 
@@ -91,7 +91,7 @@ replaces only the installed `dist/`.
 | Cooldown (days) | 14 | How long a used meme stays out of rotation. 0 turns it off. |
 | Cooldown growth | 2 | Each further use of the same meme multiplies its cooldown: 14, 28, 56 … days, at most a year. |
 | Use the bundled catalogue | on | About 200 image memes from [memegen](https://github.com/jacebrowning/memegen). |
-| Automatic memes | off | Meme opens on its own after an answer, folded, dismissible. Every answer, every 3rd, or only wrong ones. Counts toward the shared daily cap of 10 automatic memes; at the cap, none, and settings say so. Meme this still works. |
+| Automatic memes | off | Meme opens on its own, folded, dismissible. After the answer is revealed: every, every 3rd, or only wrong. When a question is asked: every, or every 3rd; Hint or Think only, never the answer. Shares the daily cap of 10 automatic memes with teacher memes; at the cap, none, and settings say so. Meme this still works. |
 | Image server | `https://api.memegen.link` | Where blank images come from. A self-hosted memegen works too. Empty: captions only. |
 | Minimum cooldown after rejecting (days) | 1 | A meme rejected with **Not this one** stays out at least this long, even with cooldown 0. |
 | Own memes first (%) | 100 | Chance a pick is one of your own memes while one is out of cooldown. 100: always. Lower mixes in the catalogue. |
@@ -196,7 +196,7 @@ original caption. Plugin assembles final text; fixed phrasing cannot be reworded
 
 Open issues. Not in the current build.
 
-- Buttonless mode: memes appear on their own after an answer. Off by default. Shipped: setting **Automatic memes** ([#18](https://github.com/808arc/meme-plugin/issues/18)).
+- Buttonless mode: memes appear on their own after an answer. Off by default. Shipped: setting **Automatic memes** ([#18](https://github.com/808arc/meme-plugin/issues/18)); asked trigger ([#38](https://github.com/808arc/meme-plugin/issues/38)).
 - Like or dislike any meme; save favourites in a local library ([#19](https://github.com/808arc/meme-plugin/issues/19)).
 - Elastic cooldown and meme choice on top of the user knowledge graph. Needs a decision on learner strength first ([#20](https://github.com/808arc/meme-plugin/issues/20)).
 - Memes as spaced-repetition cards, with optional quizzes ([#22](https://github.com/808arc/meme-plugin/issues/22)).

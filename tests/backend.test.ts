@@ -9,7 +9,12 @@ import type {
 	PluginInferenceRequest,
 } from "learnharness-plugin-api";
 import { activate, type BackendOptions } from "../src/backend.ts";
-import { BUTTONLESS, FACT_CHECK, TEACHER_TOOL } from "../src/config.ts";
+import {
+	BUTTONLESS,
+	CHAT_MEMES,
+	FACT_CHECK,
+	TEACHER_TOOL,
+} from "../src/config.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
 import { GENERATED_FILE, readRating } from "../src/reuse.ts";
 import { fillRequest, PROMPT_VERSION } from "../src/prompts.ts";
@@ -2133,4 +2138,161 @@ test("tavily: the key never appears in settings output, and an error means no we
 	assert.equal(found.meme.origin, "custom", "HTTP 503 is no hit");
 	assert.equal(calls.length, 1);
 	assert.equal(calls[0], `Bearer ${key}`);
+});
+
+// #38 chat-triggered memes: asked when the question appears, Hint or Think only.
+const asked = (key: string, extra: Record<string, unknown> = {}) => ({
+	key,
+	asked: true,
+	prompt: "Who backed CUDA?",
+	options: ["Lisa Su", "Sundar Pichai"],
+	...extra,
+});
+const hintOrThink = (mode: "hint" | "think") => ({
+	...offline,
+	automaticMemes: "asked",
+	mode,
+});
+
+test("#38 asked trigger is off by default and never runs on a reveal request", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", offline);
+	assert.deepEqual(await call("auto-meme", asked("s:a1")), { status: "off" });
+	await call("save-settings", { automaticMemes: "every" });
+	assert.deepEqual(await call("auto-meme", asked("s:a2")), { status: "off" });
+	assert.equal(f.requests.length, 0, "no model call while off");
+});
+
+test("#38 asked trigger: Hint or Think only, and never the stored answer", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", hintOrThink("hint"));
+	// The frontend never sends an answer key; a stray one must not reach the meme.
+	const hint = await call<AutomaticResult>(
+		"auto-meme",
+		asked("s:a1", { answer: { correct: ["Lisa Su"] } }),
+	);
+	assert.equal(hint.status, "meme");
+	assert.equal(hint.status === "meme" && hint.meme.mode, "hint");
+	assert.ok(hint.status === "meme" && !("answer" in hint.meme.concept));
+	// Answer mode runs the asked trigger in Hint; Think mode runs it in Think.
+	await call("save-settings", hintOrThink("think"));
+	const made = await call<AutomaticResult>("auto-meme", asked("s:a2"));
+	assert.equal(made.status === "meme" && made.meme.mode, "think");
+});
+
+test("#38 asked trigger: the reveal rule and the no-answer check still hold", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", hintOrThink("hint"));
+	const made = await call<AutomaticResult>("auto-meme", asked("s:a3"));
+	assert.equal(made.status, "meme");
+	assert.ok(
+		made.status === "meme" && !made.meme.fact.includes("Jensen"),
+		"the fact never names the answer",
+	);
+});
+
+test("#38 asked trigger and reveal trigger never cross", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, automaticMemes: "every" });
+	assert.deepEqual(await call("auto-meme", asked("s:x1")), { status: "off" });
+	await call("save-settings", hintOrThink("hint"));
+	assert.deepEqual(await call("auto-meme", answer("s:x2")), { status: "off" });
+	assert.equal(f.stored().buttonless.revealed, 0, "reveal counter untouched");
+});
+
+test("#38 asked-nth: every Nth asked question, counted apart from reveals", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", {
+		...offline,
+		automaticMemes: "asked-nth",
+		mode: "hint",
+	});
+	const statuses: string[] = [];
+	for (let index = 1; index <= CHAT_MEMES.askedNth * 2; index++)
+		statuses.push(
+			(await call<AutomaticResult>("auto-meme", asked(`s:n${index}`))).status,
+		);
+	assert.deepEqual(
+		statuses,
+		Array.from({ length: CHAT_MEMES.askedNth * 2 }, (_, index) =>
+			(index + 1) % CHAT_MEMES.askedNth === 0 ? "meme" : "skipped",
+		),
+	);
+	assert.equal(f.stored().buttonless.asked, CHAT_MEMES.askedNth * 2);
+	assert.equal(f.stored().buttonless.revealed, 0);
+});
+
+test("#38 asked trigger shares the daily budget with teacher memes and reveal memes", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const first = f.start();
+	await first.call("save-settings", hintOrThink("hint"));
+	assert.equal(
+		(await first.call<AutomaticResult>("auto-meme", asked("s:b1"))).status,
+		"meme",
+	);
+	assert.equal(
+		f.stored().automatic.count,
+		1,
+		"an asked meme spends the budget",
+	);
+	first.dispose();
+
+	const stored = f.stored();
+	stored.automatic = {
+		day: new Date().toLocaleDateString("en-CA"),
+		count: TEACHER_TOOL.automaticMemesPerDay,
+	};
+	fs.writeFileSync(
+		path.join(f.dataDirectory, "state.json"),
+		JSON.stringify(stored),
+	);
+	const second = f.start();
+	const requests = f.requests.length;
+	assert.deepEqual(await second.call("auto-meme", asked("s:b2")), {
+		status: "budget",
+	});
+	assert.equal(f.requests.length, requests, "no model request over budget");
+	// Teacher memes read the same spent budget.
+	await second.call("save-settings", { ...offline, teacherMemes: "teacher" });
+	const registered = (
+		second as unknown as {
+			registered: { create(context: unknown): unknown[] }[];
+		}
+	).registered;
+	assert.equal(
+		registered[0]!.create({ chatId: "c", agent: "teacher" }).length,
+		0,
+		"teacher memes see the spent budget",
+	);
+});
+
+test("#38 no repeat per question: one automatic meme, asked or revealed, persisted", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const first = f.start();
+	await first.call("save-settings", hintOrThink("hint"));
+	assert.equal(
+		(await first.call<AutomaticResult>("auto-meme", asked("s:q9"))).status,
+		"meme",
+	);
+	const requests = f.requests.length;
+	assert.deepEqual(await first.call("auto-meme", asked("s:q9")), {
+		status: "seen",
+	});
+	first.dispose();
+	// Same question, after a restart and after switching to the reveal trigger.
+	const second = f.start();
+	await second.call("save-settings", {
+		...offline,
+		automaticMemes: "every",
+		mode: "answer",
+	});
+	assert.deepEqual(await second.call("auto-meme", answer("s:q9")), {
+		status: "seen",
+	});
+	assert.equal(f.requests.length, requests, "no second meme for the question");
 });

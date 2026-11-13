@@ -10,16 +10,22 @@ permissions:
   contents: write
 
 jobs:
+  # Full CI gate first: a tag never publishes a red build.
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   release:
+    needs: ci
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Check tag matches package.json and manifest.json
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -27,15 +33,9 @@ jobs:
           man="$(node -p 'require("./manifest.json").version')"
           echo "tag=$tag package.json=$pkg manifest.json=$man"
           [ "$tag" = "$pkg" ] && [ "$tag" = "$man" ] || { echo "::error::Version mismatch"; exit 1; }
-
-      - name: Provide plugin SDK types
-        run: cp -r learnharness-plugins/types .sdk
-
+      - run: cp -r learnharness-plugins/types .sdk
       - run: npm ci --no-audit --no-fund
-      - run: npm run typecheck
-      - run: npm test
       - run: npm run build
-
       # Archive mirrors the installed layout: <plugins-directory>/meme-plugin/dist/...
       - name: Package
         id: package
@@ -46,7 +46,6 @@ jobs:
           (cd "$stage" && zip -qr "$GITHUB_WORKSPACE/$asset" meme-plugin)
           sha256sum "$asset" > "$asset.sha256"
           echo "asset=$asset" >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

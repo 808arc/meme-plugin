@@ -82,6 +82,8 @@ export interface GeneratedMeme {
 	generatedId?: string;
 	/** Set when an earlier meme for the same concept was reused instead of generated. */
 	reused?: true;
+	/** The learner's stored rating of this generated meme, sent with generate results. */
+	rating?: "up" | "down" | null;
 }
 
 export interface Settings {

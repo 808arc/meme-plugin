@@ -8,6 +8,7 @@ import type {
 	PluginModelSpec,
 } from "learnharness-plugin-api";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
+import { type MemeStage, STAGE_TOPIC } from "./config.ts";
 import { loadImage } from "./images.ts";
 import { loadCustomMemes, memegenMemes } from "./library.ts";
 import {
@@ -17,18 +18,20 @@ import {
 	PROMPT_VERSION,
 	templateRequest,
 } from "./prompts.ts";
-import { coolingDown, pickMeme, recordUse } from "./scheduler.ts";
 import {
 	chooseReuse,
 	conceptKey,
 	mayReuse,
 	newEntry,
+	rateGenerated,
 	readGenerated,
+	readRating,
 	recordFresh,
 	recordReuse,
 	type StoredMeme,
 	writeGenerated,
 } from "./reuse.ts";
+import { coolingDown, pickMeme, recordUse } from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
@@ -52,17 +55,11 @@ interface CachedTemplate extends Template {
 	captionHash: string;
 	promptVersion: number;
 }
-/** Minimal learner rating of one meme; the full data model belongs to issue #19. */
-interface Rating {
-	rating: "up" | "down";
-	at: number;
-}
 interface Stored {
 	version: number;
 	settings: Settings;
 	usage: Record<string, Usage>;
 	templates: Record<string, CachedTemplate>;
-	ratings: Record<string, Rating>;
 }
 
 /** The model answered, but not with something the plugin can accept. */
@@ -85,7 +82,6 @@ function readState(file: string): Stored {
 				settings: readSettings(undefined),
 				usage: {},
 				templates: {},
-				ratings: {},
 			};
 		throw new Error(
 			`Meme plugin could not read ${STATE_FILE}: ${(error as Error).message}`,
@@ -121,24 +117,11 @@ function readState(file: string): Stored {
 			? stored.templates
 			: {}
 	) as Record<string, CachedTemplate>;
-	const ratings: Record<string, Rating> = {};
-	for (const [id, entry] of Object.entries(
-		stored.ratings && typeof stored.ratings === "object" ? stored.ratings : {},
-	)) {
-		const item = entry as Partial<Rating> | null;
-		if (
-			item &&
-			(item.rating === "up" || item.rating === "down") &&
-			Number.isFinite(item.at)
-		)
-			ratings[id] = { rating: item.rating, at: item.at! };
-	}
 	return {
 		version: STATE_VERSION,
 		settings: readSettings(stored.settings),
 		usage,
 		templates,
-		ratings,
 	};
 }
 
@@ -318,6 +301,14 @@ export function activate(ctx: PluginBackendContext): () => void {
 			},
 		});
 
+	/** Request id of the running generate call; stage events carry it so a window
+	 * only follows its own request. Null when the caller sent none. */
+	let stageFor: string | null = null;
+	const stage = (name: MemeStage) => {
+		if (stageFor === null || disposed || ctx.signal.aborted) return;
+		ctx.events.emit(STAGE_TOPIC, { requestId: stageFor, stage: name });
+	};
+
 	async function generate(input: unknown): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
@@ -338,6 +329,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 		const exclude =
 			typeof value.excludeMemeId === "string" ? value.excludeMemeId : undefined;
 
+		stage("selecting");
 		const memes = pool().memes;
 		// Before any model is needed: an earlier meme for this concept, if this
 		// concept's reuse share allows. A reuse counts as a use for the cooldown.
@@ -382,6 +374,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 			const meme = memes.find((candidate) => candidate.id === id);
 			if (!meme) break;
 			tried.add(meme.id);
+			stage("writing");
 			let template: Template;
 			try {
 				template = await templateFor(meme, model);
@@ -456,26 +449,28 @@ export function activate(ctx: PluginBackendContext): () => void {
 			// One paid request chain at a time, however many windows ask.
 			if (generating) throw new Error("A meme is already being made.");
 			generating = true;
+			const requestId = object(input).requestId;
+			stageFor = typeof requestId === "string" ? requestId : null;
 			try {
-				return await generate(input);
+				const meme = await generate(input);
+				// A reopened (reused) meme carries the learner's earlier rating.
+				const rating = meme.generatedId
+					? (readRating(ctx.dataDirectory, meme.generatedId) ?? null)
+					: null;
+				return { ...meme, rating };
 			} finally {
 				generating = false;
+				stageFor = null;
 			}
 		}),
 		ctx.handle("rate", (input) => {
 			alive();
 			const { id, rating } = object(input);
-			if (
-				typeof id !== "string" ||
-				!pool().memes.some((meme) => meme.id === id)
-			)
-				throw new Error("Unknown meme.");
+			if (typeof id !== "string" || !id) throw new Error("Unknown meme.");
 			if (rating !== "up" && rating !== "down" && rating !== null)
-				throw new Error("Rating must be up, down or null.");
-			const ratings = { ...state.ratings };
-			if (rating === null) delete ratings[id];
-			else ratings[id] = { rating, at: Date.now() };
-			save({ ...state, ratings });
+				throw new Error('A rating is "up", "down" or null.');
+			if (!rateGenerated(ctx.dataDirectory, id, rating))
+				throw new Error("Unknown meme.");
 			return null;
 		}),
 		ctx.handle("get-image", async (input): Promise<MemeImage | null> => {

@@ -7,6 +7,7 @@ import type {
 	PluginWidgetHandle,
 } from "learnharness-plugin-api";
 import { type ConceptResult, conceptFromView } from "./concept.ts";
+import { STAGE_TOPIC, STAGES } from "./config.ts";
 import { element, memePng, mountMeme } from "./render.ts";
 import { imageBaseUrlProblem, LIMITS } from "./settings.ts";
 import type {
@@ -19,9 +20,6 @@ import type {
 
 const ICON =
 	'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01"/><path d="M15 9h.01"/></svg>';
-
-/** Delay before the second progress label; the backend call is a single step. */
-const WRITING_STEP_DELAY_MS = 1500;
 
 const message = (error: unknown) =>
 	error instanceof Error && error.message
@@ -91,7 +89,7 @@ function mountSurface(
 		clear();
 		result = next;
 		image = picture;
-		rating = null;
+		rating = next.rating ?? null;
 		unmountMeme = mountMeme(body, next, picture);
 		fact.textContent = next.fact;
 		credit.append(`Meme: ${next.meme.name}`);
@@ -117,18 +115,26 @@ function mountSurface(
 		up.update({ disabled: true });
 		down.update({ disabled: true });
 		notice.textContent = "";
-		status("Finding a fitting meme…");
-		// The backend makes one call, so the second step is a timed label, not a
-		// real stage report. It only shows if the first step is still running.
-		const writing = setTimeout(() => {
-			if (!stale()) status("Writing the caption…");
-		}, WRITING_STEP_DELAY_MS);
+		status(STAGES.selecting);
+		// The backend reports each step as it starts; only this request's events count.
+		const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+		let done = false;
+		const stopStages = ctx.onNotification((event) => {
+			if (done || stale() || event.topic !== STAGE_TOPIC) return;
+			const data = event.data as { requestId?: unknown; stage?: unknown };
+			if (data?.requestId !== requestId || typeof data.stage !== "string")
+				return;
+			const label = (STAGES as Record<string, string>)[data.stage];
+			if (label) status(label);
+		});
 		try {
 			// Asking again steers away from the meme that is on screen.
 			const next = await ctx.call<GeneratedMeme>("generate", {
 				...concept,
+				requestId,
 				...(result ? { excludeMemeId: result.meme.id } : {}),
 			});
+			done = true;
 			if (stale()) return;
 			let picture: MemeImage | null = null;
 			if (next.meme.hasImage) {
@@ -146,27 +152,29 @@ function mountSurface(
 			another.update({ disabled: false, label: "Another meme" });
 			copy.update({ disabled: false });
 			copyImage.update({ disabled: !picture });
-			up.update({ disabled: false });
-			down.update({ disabled: false });
+			// Rating needs the stored handle; a meme without one cannot be rated.
+			up.update({ disabled: !next.generatedId });
+			down.update({ disabled: !next.generatedId });
 		} catch (error) {
 			if (stale()) return;
 			status(message(error), true);
 			another.update({ disabled: false, label: "Try again" });
 		} finally {
-			clearTimeout(writing);
+			done = true;
+			stopStages();
 		}
 	};
 
 	const rate = async (value: "up" | "down") => {
-		if (!result) return;
-		const id = result.meme.id;
+		const id = result?.generatedId;
+		if (!id) return;
 		const previous = rating;
 		rating = rating === value ? null : value;
 		paintRating();
 		try {
 			await ctx.call("rate", { id, rating });
 		} catch (error) {
-			if (signal.aborted || result?.meme.id !== id) return;
+			if (signal.aborted || result?.generatedId !== id) return;
 			rating = previous;
 			paintRating();
 			notice.textContent = `Rating not saved. ${message(error)}`;

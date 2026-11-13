@@ -192,7 +192,6 @@ original caption. Plugin assembles final text; fixed phrasing cannot be reworded
 
 Open issues. Not in the current build.
 
-- Meme modes: Answer (today), Hint, Think, which make the learner think before reveal ([#17](https://github.com/808arc/meme-plugin/issues/17)).
 - Buttonless mode: memes appear on their own after an answer. Off by default. Shipped: setting **Automatic memes** ([#18](https://github.com/808arc/meme-plugin/issues/18)).
 - Like or dislike any meme; save favourites in a local library ([#19](https://github.com/808arc/meme-plugin/issues/19)).
 - Elastic cooldown and meme choice on top of the user knowledge graph. Needs a decision on learner strength first ([#20](https://github.com/808arc/meme-plugin/issues/20)).

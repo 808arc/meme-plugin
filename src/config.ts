@@ -29,8 +29,15 @@ export const STAGE_TOPIC = "meme-stage";
  * Add a stage here, then emit it from the backend where that step starts; the
  * page shows any stage listed here and ignores unknown ones. */
 export const STAGES = Object.freeze({
+	/** Looking for an earlier meme for the same question (#9). */
+	reuse: "Looking for an earlier meme…",
+	/** Searching the web for an existing meme (#11, Answer mode only). */
+	search: "Searching the web for a meme…",
+	/** Choosing a template from own memes, then the catalogue (#21, #4). */
 	selecting: "Finding a fitting meme…",
 	writing: "Writing the caption…",
+	/** The fact check (#7) or the no-answer check (#17). */
+	checking: "Checking the caption…",
 });
 export type MemeStage = keyof typeof STAGES;
 

@@ -478,6 +478,7 @@ export function activate(
 				(raw) => parseFilling(raw, template),
 			);
 			// Certain agreement needs no model call; otherwise a cheap self-check decides.
+			stage("checking");
 			const verdict =
 				(concept.answer && quickAgreement(filling.fact, concept.answer)) ??
 				(await ask(
@@ -523,6 +524,7 @@ export function activate(
 		if (!webSearch || !searchAgent) return null;
 		const agent = options.createSearchAgent?.(state.settings);
 		if (!agent) return null;
+		stage("search");
 		const hits = await searchCandidates(agent, concept, ctx.signal);
 		alive();
 		for (const hit of hits) {
@@ -626,9 +628,9 @@ export function activate(
 				},
 			});
 
-		stage("selecting");
 		// Before any model is needed: an earlier meme for this concept, if this
 		// concept's reuse share allows. A reuse counts as a use for the cooldown.
+		stage("reuse");
 		// The mode is part of the key: a meme made in one mode is never reused in another.
 		const key = `${mode}:${conceptKey(prompt)}`;
 		const store = readGenerated(ctx.dataDirectory);
@@ -669,6 +671,7 @@ export function activate(
 			// Step 2: own memes first (#21, by the own-memes share), then the model
 			// chooses a fitting meme among those not cooling down (#4).
 			const candidates = memes.filter((meme) => !tried.has(meme.id));
+			stage("selecting");
 			const id = await choose(
 				purpose,
 				model,
@@ -714,7 +717,10 @@ export function activate(
 						purpose,
 						model,
 						modeFillRequest(mode, { meme, template, concept, early }),
-						(raw) => parseModeFilling(raw, template, options),
+						(raw) => {
+							stage("checking");
+							return parseModeFilling(raw, template, options);
+						},
 					);
 				} catch (error) {
 					alive();

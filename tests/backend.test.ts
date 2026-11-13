@@ -1109,10 +1109,9 @@ test("generate reports its stages to the requesting window", async (t) => {
 		prompt: "Who backed CUDA?",
 		requestId: "r1",
 	});
-	assert.deepEqual(f.emitted, [
-		{ topic: "meme-stage", data: { requestId: "r1", stage: "selecting" } },
-		{ topic: "meme-stage", data: { requestId: "r1", stage: "writing" } },
-	]);
+	const stages = () =>
+		f.emitted.map((event) => (event.data as { stage: string }).stage);
+	assert.deepEqual(stages(), ["reuse", "selecting", "writing", "checking"]);
 	assert.equal(meme.rating, null, "a fresh meme is unrated");
 	f.emitted.length = 0;
 	await call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
@@ -1786,4 +1785,28 @@ test("fix(E): the teacher tool always makes Answer memes, whatever the mode", as
 		options: ["Jensen Huang", "Lisa Su"],
 	});
 	assert.equal(hint.mode, "hint");
+});
+
+test("fix(F): the search stage is reported only when a search runs", async (t) => {
+	const w = await webFixture(
+		t,
+		[{ ...hit, title: "NVIDIA backed CUDA" }],
+		() => ({
+			accurate: true,
+		}),
+	);
+	await w.call<GeneratedMeme>("generate", { ...ask, requestId: "w1" });
+	const stages = w.emitted.map(
+		(event) => (event.data as { stage: string }).stage,
+	);
+	assert.deepEqual(stages, ["reuse", "search"]);
+	await w.call("save-settings", { mode: "hint" });
+	w.emitted.length = 0;
+	await w.call<GeneratedMeme>("generate", { ...ask, requestId: "w2" });
+	assert.ok(
+		!w.emitted.some(
+			(event) => (event.data as { stage: string }).stage === "search",
+		),
+		"no search stage in Hint",
+	);
 });

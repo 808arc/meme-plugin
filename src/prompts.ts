@@ -6,6 +6,7 @@ import {
 	MAX_VALUE_LENGTH,
 	sentences,
 } from "./template.ts";
+import type { Tone } from "./config.ts";
 import type { Concept, Meme, Template } from "./types.ts";
 
 export const PROMPT_VERSION = 4;
@@ -59,12 +60,75 @@ export function templateRequest(
 	};
 }
 
+/** #36: one instruction line per tone, with style-only examples (no real facts). */
+const TONE_STYLE: Record<
+	Exclude<Tone, "none">,
+	{ instruction: string; examples: readonly string[] }
+> = {
+	deadpan: {
+		instruction:
+			"Write deadpan: flat and unbothered, stating absurd things as if they were ordinary.",
+		examples: [
+			"The meeting could have been an email. It was a meeting.",
+			"Everyone agreed to the plan. Nobody read the plan.",
+			"The goose was informed. The goose was not impressed.",
+		],
+	},
+	absurd: {
+		instruction:
+			"Write absurd: push the fact into a ridiculous, vivid image the character takes seriously.",
+		examples: [
+			"The sandwich demanded a seat at the table, a lawyer and a moat.",
+			"The spoon has unionised. The forks are next.",
+			"The bicycle has filed a formal complaint with the moon.",
+		],
+	},
+	sarcastic: {
+		instruction:
+			"Write sarcastic: mock the situation with exaggerated politeness that means the opposite.",
+		examples: [
+			"Oh sure, reading one chapter is totally reasonable.",
+			"Wow, what a shock, the printer broke again.",
+			"Yes, because asking nicely has always worked before.",
+		],
+	},
+	"self-deprecating": {
+		instruction:
+			"Write self-deprecating: the character makes fun of its own confusion or failure.",
+		examples: [
+			"I studied by staring at the textbook. Very effective. Very, very effective.",
+			"My plan was flawless, which is why I am still in the car.",
+			"I am the expert here, and the expert is confused.",
+		],
+	},
+	playful: {
+		instruction:
+			"Write playful: light, bouncy and cheerful, like talking to a small friend.",
+		examples: [
+			"Hop on, little blob, we are going to the snack drawer!",
+			"Wheee, the answer is over here, follow the sparkles!",
+			"Tiny hat, big idea, let's go!",
+		],
+	},
+};
+
+/** The tone line for the fill prompt; none for "none", so that prompt is unchanged. */
+export function toneRule(tone: Tone): string[] {
+	if (tone === "none") return [];
+	const { instruction, examples } = TONE_STYLE[tone];
+	return [
+		`- Tone: ${instruction} The tone changes only the wording; the facts and the rules above still apply. Style examples only, never copy them or their facts: ${examples.map((example) => `"${example}"`).join(" ")}`,
+	];
+}
+
 /** Steps 4 and 5: fill the slots with facts about the concept, optionally add emphasis. */
 export function fillRequest(input: {
 	meme: Pick<Meme, "name">;
 	template: Template;
 	concept: Concept;
 	emphasis: boolean;
+	/** #36: comic tone; omitted or "none" leaves the prompt as before. */
+	tone?: Tone;
 	/** A fact from an earlier attempt that did not agree with the question. */
 	avoid?: string;
 }): ModelRequest {
@@ -83,6 +147,7 @@ export function fillRequest(input: {
 			"- The filled caption must state true facts that answer the learner's question. Never invent names, dates or numbers. Prefer the single most important fact.",
 			"- Make it funny with exaggeration and absurdity, not puns or wordplay: push the true fact to a vivid, absurd extreme the meme's character would relish. Use one surprise per caption, and put the punchline in the last numbered sentence.",
 			"- A joke must never need a claim that is false or unsupported by the fact; when it would, state the plain fact instead.",
+			...toneRule(input.tone ?? "none"),
 			`- Each value is a short phrase (at most ${MAX_VALUE_LENGTH} characters) that reads grammatically inside its sentence. Plain text only.`,
 			"- Do not rewrite the fixed words of the template; you only supply slot values.",
 			emphasis,

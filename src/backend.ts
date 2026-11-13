@@ -507,6 +507,7 @@ export function activate(
 					template,
 					concept,
 					emphasis: state.settings.emphasis,
+					tone: state.settings.tone,
 					avoid,
 				}),
 				(raw) => parseFilling(raw, template),

@@ -25,6 +25,7 @@ import {
 	STAGE_TOPIC,
 	STAGES,
 	TEACHER_TOOL,
+	TONES,
 } from "./config.ts";
 import { element, memePng, mountMeme } from "./render.ts";
 import {
@@ -472,6 +473,19 @@ function settingsRows(
 				label: MEME_MODES.labels[value],
 			})),
 			onChange: (mode) => save({ mode: mode as MemeMode }),
+		},
+		{
+			type: "dropdown",
+			key: "tone",
+			label: "Tone",
+			description:
+				"Gives the caption a comic tone: deadpan, absurd, sarcastic, self-deprecating or playful. The facts and the accuracy rules stay the same.",
+			value: settings.tone,
+			options: TONES.map((value) => ({
+				value,
+				label: value[0]!.toUpperCase() + value.slice(1),
+			})),
+			onChange: (tone) => save({ tone: tone as Settings["tone"] }),
 		},
 		{
 			type: "toggle",

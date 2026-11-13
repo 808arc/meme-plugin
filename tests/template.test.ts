@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { extractJson, fillRequest, templateRequest } from "../src/prompts.ts";
+import { DEFAULT_SETTINGS, applySettingsPatch } from "../src/settings.ts";
 import {
 	assemble,
 	parseFilling,
@@ -266,4 +268,96 @@ test("requests carry the question, the template and the emphasis switch", () => 
 		emphasis: false,
 	});
 	assert.match(off.systemPrompt, /Set "emphasis" to null/);
+});
+
+// #36 comic effect
+test("tone none leaves the fill request byte-identical to before the tone setting", () => {
+	const template = parseTemplate(proposal, caption);
+	const meme = { name: "Proud speech", caption };
+	const digest = (r: { systemPrompt: string; user: string }) =>
+		createHash("sha256")
+			.update(`${r.systemPrompt}\u0000${r.user}`)
+			.digest("hex");
+	const a = fillRequest({
+		meme,
+		template,
+		concept: {
+			prompt: "Who backed CUDA?",
+			context: "GPU",
+			answer: { correct: ["Jensen Huang"], others: [] },
+		},
+		emphasis: true,
+	});
+	const b = fillRequest({
+		meme,
+		template,
+		concept: { prompt: "Who backed CUDA?" },
+		emphasis: false,
+		avoid: "Lisa Su backed CUDA.",
+		tone: "none",
+	});
+	// Hashes of the fill requests from the commit before the tone setting (prompt version 4).
+	assert.equal(
+		digest(a),
+		"a4ba5af5a88229c8092242dfc1e5cc8a19c0f1db95583c20ce5bceb75e7cfc46",
+	);
+	assert.equal(
+		digest(b),
+		"43afe1e5631759c9a975eeb171c0588f35f1d68c32d2e2fe86a2f8c8114c4e5a",
+	);
+});
+
+test("each non-none tone adds one tone line with examples and keeps the accuracy rules", () => {
+	const template = parseTemplate(proposal, caption);
+	const base = fillRequest({
+		meme: { name: "Proud speech" },
+		template,
+		concept: { prompt: "Who backed CUDA?" },
+		emphasis: false,
+	});
+	for (const tone of [
+		"deadpan",
+		"absurd",
+		"sarcastic",
+		"self-deprecating",
+		"playful",
+	] as const) {
+		const toned = fillRequest({
+			meme: { name: "Proud speech" },
+			template,
+			concept: { prompt: "Who backed CUDA?" },
+			emphasis: false,
+			tone,
+		});
+		const lines = toned.systemPrompt.split("\n");
+		const baseLines = base.systemPrompt.split("\n");
+		assert.equal(lines.length, baseLines.length + 1, tone);
+		assert.equal(
+			lines.filter((line) => line.startsWith("- Tone: ")).length,
+			1,
+			tone,
+		);
+		assert.match(toned.systemPrompt, /never copy them or their facts/);
+		assert.match(
+			toned.systemPrompt,
+			/The filled caption must state true facts that answer the learner's question\./,
+		);
+		assert.match(
+			toned.systemPrompt,
+			/A joke must never need a claim that is false or unsupported by the fact/,
+		);
+		assert.equal(toned.user, base.user, tone);
+	}
+});
+
+test("tone is validated like the other settings", () => {
+	assert.equal(DEFAULT_SETTINGS.tone, "none");
+	assert.equal(
+		applySettingsPatch(DEFAULT_SETTINGS, { tone: "absurd" }).tone,
+		"absurd",
+	);
+	assert.throws(
+		() => applySettingsPatch(DEFAULT_SETTINGS, { tone: "loud" }),
+		/tone must be one of none, deadpan/,
+	);
 });

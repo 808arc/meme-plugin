@@ -592,6 +592,7 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 		searchAgent: null,
 		searchProvider: "none",
 		mode: "answer",
+		tone: "none",
 		teacherMemes: "off",
 		automaticMemes: "off",
 	});

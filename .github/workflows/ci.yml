@@ -47,6 +47,7 @@ jobs:
       # learnharness-plugin-api is a local file dependency (file:.sdk).
       - run: cp -r learnharness-plugins/types .sdk
       - run: npm ci --no-audit --no-fund
+      - run: npm run format:check
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

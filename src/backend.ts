@@ -5,8 +5,10 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
 	PluginBackendContext,
+	PluginCallPurpose,
 	PluginModelSpec,
 } from "learnharness-plugin-api";
+import { TEACHER_TOOL } from "./config.ts";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
 import { loadImage } from "./images.ts";
 import { loadCustomMemes, memegenMemes } from "./library.ts";
@@ -27,6 +29,7 @@ import type {
 	MemeImage,
 	PluginState,
 	Settings,
+	TeacherMemes,
 	Template,
 	Usage,
 } from "./types.ts";
@@ -36,9 +39,17 @@ const STATE_FILE = "state.json";
 /** A meme whose caption cannot be templated is skipped; try this many before giving up. */
 const MEME_ATTEMPTS = 3;
 const MAX_OUTPUT_TOKENS = 2048;
-const TEACHER_TOOL = "meme_teach";
-/** Reveal rule: the tool only ever gets a concept, and only after the learner has tried. */
-const TEACHER_INSTRUCTIONS = `A meme plugin is enabled. Call the ${TEACHER_TOOL} tool only when a meme would help a concept stick, and only after the learner has answered the current question or it has been revealed. Never call it while a question is pending. Pass the concept as "prompt" and never state the answer to an unrevealed question. Call it at most once per concept.`;
+const TOOL_NAME = "meme_teach";
+/** Reveal rule (prompt-only, see docs/teacher-meme-tool.md): the tool only ever gets a
+ * concept, and only after the learner has tried. */
+const REVEAL_RULE = `Only call it after the learner has answered the current question or it has been revealed. Never call it while a question is pending. Pass the concept as "prompt" and never state the answer to an unrevealed question. If the tool is not offered in a turn, the meme limit is reached: do not mention it.`;
+const TEACHER_INSTRUCTIONS: Record<Exclude<TeacherMemes, "off">, string> = {
+	teacher: `A meme plugin is enabled. You may call the ${TOOL_NAME} tool, without being asked, when a meme would help a concept stick. ${REVEAL_RULE}`,
+	wrong: `A meme plugin is enabled. Call the ${TOOL_NAME} tool only right after the learner answered a question incorrectly, to help the correct answer stick once it has been revealed. ${REVEAL_RULE}`,
+};
+
+/** Local calendar day, for the automatic-meme budget. */
+const dayKey = (now: number) => new Date(now).toLocaleDateString("en-CA");
 
 interface CachedTemplate extends Template {
 	captionHash: string;
@@ -49,6 +60,8 @@ interface Stored {
 	settings: Settings;
 	usage: Record<string, Usage>;
 	templates: Record<string, CachedTemplate>;
+	/** Automatic memes made today; the shared budget in config.ts. */
+	automatic: { day: string; count: number };
 }
 
 /** The model answered, but not with something the plugin can accept. */
@@ -71,6 +84,7 @@ function readState(file: string): Stored {
 				settings: readSettings(undefined),
 				usage: {},
 				templates: {},
+				automatic: { day: "", count: 0 },
 			};
 		throw new Error(
 			`Meme plugin could not read ${STATE_FILE}: ${(error as Error).message}`,
@@ -111,7 +125,18 @@ function readState(file: string): Stored {
 		settings: readSettings(stored.settings),
 		usage,
 		templates,
+		automatic: readAutomatic(stored.automatic),
 	};
+}
+
+function readAutomatic(value: unknown): Stored["automatic"] {
+	const item = value as Partial<Stored["automatic"]> | null | undefined;
+	return item &&
+		typeof item.day === "string" &&
+		Number.isInteger(item.count) &&
+		item.count! >= 0
+		? { day: item.day, count: item.count! }
+		: { day: "", count: 0 };
 }
 
 export function activate(ctx: PluginBackendContext): () => void {
@@ -201,6 +226,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 	/** One model exchange that must end in JSON accepted by `parse`. The model gets a
 	 * single chance to correct a rejected reply, with the reason. */
 	async function ask<T>(
+		purpose: PluginCallPurpose,
 		model: PluginModelSpec,
 		request: ModelRequest,
 		parse: (raw: unknown) => T,
@@ -211,10 +237,10 @@ export function activate(ctx: PluginBackendContext): () => void {
 			{ role: "user", content: request.user, timestamp: Date.now() },
 		];
 		for (let attempt = 0; ; attempt++) {
-			// The learner clicked the action: user-initiated, never background work.
+			// "user" when the learner pressed Meme this; "background" when the teacher chose to.
 			const reply = await ctx.inference.complete({
 				model,
-				purpose: "user",
+				purpose,
 				context: { systemPrompt: request.systemPrompt, messages },
 				options: { maxTokens: MAX_OUTPUT_TOKENS },
 				signal: ctx.signal,
@@ -249,6 +275,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 	async function templateFor(
 		meme: Meme,
 		model: PluginModelSpec,
+		purpose: PluginCallPurpose,
 	): Promise<Template> {
 		const captionHash = createHash("sha256")
 			.update(meme.caption.join("\n"))
@@ -267,7 +294,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 				/* hand-edited or stale: rebuild */
 			}
 		}
-		const template = await ask(model, templateRequest(meme), (raw) =>
+		const template = await ask(purpose, model, templateRequest(meme), (raw) =>
 			parseTemplate(raw, meme.caption),
 		);
 		save({
@@ -280,7 +307,10 @@ export function activate(ctx: PluginBackendContext): () => void {
 		return template;
 	}
 
-	async function generate(input: unknown): Promise<GeneratedMeme> {
+	async function generate(
+		input: unknown,
+		purpose: PluginCallPurpose,
+	): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
 		if (!prompt) throw new Error("There is no question to turn into a meme.");
@@ -324,7 +354,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 			tried.add(meme.id);
 			let template: Template;
 			try {
-				template = await templateFor(meme, model);
+				template = await templateFor(meme, model, purpose);
 			} catch (error) {
 				alive();
 				// A failed request (quota, network) is not the meme's fault: report it as is.
@@ -335,6 +365,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 			}
 			// Steps 4 and 5.
 			const filling = await ask(
+				purpose,
 				model,
 				fillRequest({
 					meme,
@@ -392,8 +423,19 @@ export function activate(ctx: PluginBackendContext): () => void {
 		}
 	};
 
-	const teacherTool = () => ({
-		name: TEACHER_TOOL,
+	/** Teacher turns per chat (one per tool-loadout request) and the turn of the last meme. */
+	const turns = new Map<string, { turn: number; memeTurn: number | null }>();
+	const budgetLeft = () => {
+		const today = dayKey(Date.now());
+		const used = state.automatic.day === today ? state.automatic.count : 0;
+		return used < TEACHER_TOOL.automaticMemesPerDay;
+	};
+	const capReached = (chat: { turn: number; memeTurn: number | null }) =>
+		chat.memeTurn !== null &&
+		chat.turn - chat.memeTurn < TEACHER_TOOL.turnsPerMeme;
+
+	const teacherTool = (chat: { turn: number; memeTurn: number | null }) => ({
+		name: TOOL_NAME,
 		label: "Teacher meme",
 		description:
 			"Put one meme in the chat to help a concept stick. Only after the learner has tried the question; never reveal an unrevealed answer.",
@@ -413,7 +455,22 @@ export function activate(ctx: PluginBackendContext): () => void {
 		) => {
 			alive();
 			if (signal?.aborted) throw new Error("Meme tool cancelled");
-			const meme = await guarded(() => generate(input));
+			if (capReached(chat))
+				throw new Error("Meme limit for this part of the lesson reached.");
+			if (!budgetLeft())
+				throw new Error("Today's automatic meme budget is used up.");
+			// Not asked for by the learner: automatic work, classified as background.
+			const meme = await guarded(() => generate(input, "background"));
+			chat.memeTurn = chat.turn;
+			const today = dayKey(Date.now());
+			save({
+				...state,
+				automatic: {
+					day: today,
+					count:
+						(state.automatic.day === today ? state.automatic.count : 0) + 1,
+				},
+			});
 			return {
 				content: [
 					{
@@ -430,15 +487,26 @@ export function activate(ctx: PluginBackendContext): () => void {
 	let teacherRelease: (() => void)[] = [];
 	const syncTeacherTool = () => {
 		for (const release of teacherRelease.splice(0)) release();
-		if (disposed || !state.settings.teacherTool) return;
+		const mode = state.settings.teacherMemes;
+		if (disposed || mode === "off") return;
 		teacherRelease = [
 			ctx.registerInstructions({
 				agents: ["teacher"],
-				text: TEACHER_INSTRUCTIONS,
+				text: TEACHER_INSTRUCTIONS[mode],
 			}),
 			ctx.registerTools({
+				// Teaching sessions only.
 				agents: ["teacher"],
-				create: () => [teacherTool()],
+				create: (context) => {
+					const chat = turns.get(context.chatId) ?? {
+						turn: 0,
+						memeTurn: null,
+					};
+					turns.set(context.chatId, chat);
+					chat.turn++;
+					// Over the cap or budget, the tool is simply not offered this turn.
+					return capReached(chat) || !budgetLeft() ? [] : [teacherTool(chat)];
+				},
 			}),
 		];
 	};
@@ -463,7 +531,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 			save({ ...state, usage: {} });
 			return view();
 		}),
-		ctx.handle("generate", (input) => guarded(() => generate(input))),
+		ctx.handle("generate", (input) => guarded(() => generate(input, "user"))),
 		ctx.handle("get-image", async (input): Promise<MemeImage | null> => {
 			alive();
 			const id = object(input).id;

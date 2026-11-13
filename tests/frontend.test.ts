@@ -39,7 +39,7 @@ const state: PluginState = {
 		cooldownGrowth: 2,
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
-		teacherTool: false,
+		teacherMemes: "off",
 	},
 	pool: { memegen: 209, custom: 1, coolingDown: 3 },
 	problems: ["custom-memes.json entry 2: bad"],
@@ -464,7 +464,7 @@ test("settings publish only what the backend accepted", async (t) => {
 			["cooldownDays", "number", 14],
 			["cooldownGrowth", "number", 2],
 			["useMemegen", "toggle", true],
-			["teacherTool", "toggle", false],
+			["teacherMemes", "dropdown", "off"],
 			["imageBaseUrl", "text", "https://api.memegen.link"],
 		],
 	);

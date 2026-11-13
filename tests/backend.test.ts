@@ -9,6 +9,7 @@ import type {
 	PluginInferenceRequest,
 } from "learnharness-plugin-api";
 import { activate } from "../src/backend.ts";
+import { TEACHER_TOOL } from "../src/config.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
 import type { GeneratedMeme, MemeImage, PluginState } from "../src/types.ts";
 
@@ -432,7 +433,7 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 		cooldownGrowth: 2,
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
-		teacherTool: false,
+		teacherMemes: "off",
 	});
 	assert.equal(initial.pool.memegen, memegenMemes("").length);
 	assert.equal(initial.pool.custom, 2);
@@ -663,19 +664,31 @@ test("the bundled catalogue is well formed", () => {
 	assert.ok(memegenMemes("").every((meme) => meme.image === ""));
 });
 
-test("the teacher meme tool is registered only while its setting is on", async (t) => {
+type Tool = {
+	name: string;
+	parameters: {
+		properties: Record<string, unknown>;
+		additionalProperties: boolean;
+	};
+	execute(
+		id: string,
+		input: unknown,
+	): Promise<{ content: { text: string }[]; details: GeneratedMeme }>;
+};
+
+test("the teacher meme tool exists only while a mode is on", async (t) => {
 	const f = fixture(t, { memes: [custom[0]] });
 	const { call, registered } = f.start();
 	assert.equal(registered.length, 0, "off by default");
-	await call("save-settings", { teacherTool: true });
-	assert.equal(registered.length, 1);
-	const [tool] = registered[0]!.create({ chatId: "c", agent: "teacher" }) as {
-		name: string;
-		parameters: {
-			properties: Record<string, unknown>;
-			additionalProperties: boolean;
-		};
-	}[];
+	await assert.rejects(call("save-settings", { teacherMemes: "always" }));
+	for (const mode of ["teacher", "wrong"]) {
+		await call("save-settings", { teacherMemes: mode });
+		assert.equal(registered.length, 1);
+	}
+	const [tool] = registered[0]!.create({
+		chatId: "c",
+		agent: "teacher",
+	}) as Tool[];
 	assert.equal(tool!.name, "meme_teach");
 	// No answer field: the tool only ever receives a concept.
 	assert.deepEqual(Object.keys(tool!.parameters.properties).sort(), [
@@ -683,6 +696,46 @@ test("the teacher meme tool is registered only while its setting is on", async (
 		"prompt",
 	]);
 	assert.equal(tool!.parameters.additionalProperties, false);
-	await call("save-settings", { teacherTool: false });
+	await call("save-settings", { teacherMemes: "off" });
 	assert.equal(registered.length, 0, "turning it off removes the tool");
+});
+
+test("teacher memes are background work, capped per turns and by the daily budget", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const first = f.start();
+	await first.call("save-settings", { ...offline, teacherMemes: "teacher" });
+	const create = (chatId = "c") =>
+		first.registered[0]!.create({ chatId, agent: "teacher" }) as Tool[];
+	const [tool] = create();
+	const result = await tool!.execute("call-1", { prompt: "Who backed CUDA?" });
+	assert.equal(result.details.fact, "Jensen Huang backed CUDA.");
+	assert.match(result.content[0]!.text, /Jensen Huang backed CUDA/);
+	assert.ok(f.requests.every((request) => request.purpose === "background"));
+	await assert.rejects(
+		tool!.execute("call-2", { prompt: "Again?" }),
+		/limit/,
+		"a second meme in the same turn is refused",
+	);
+	// Turns 2 to 5 after the meme: not offered. Turn 6: offered again.
+	for (let turn = 2; turn <= 5; turn++) assert.equal(create().length, 0);
+	assert.equal(create().length, 1);
+	assert.equal(create("other").length, 1, "the cap is per chat");
+	assert.equal(f.stored().automatic.count, 1);
+	first.dispose();
+
+	// The shared daily budget, once spent, hides the tool everywhere.
+	const stored = f.stored();
+	stored.automatic = {
+		day: new Date().toLocaleDateString("en-CA"),
+		count: TEACHER_TOOL.automaticMemesPerDay,
+	};
+	fs.writeFileSync(
+		path.join(f.dataDirectory, "state.json"),
+		JSON.stringify(stored),
+	);
+	const second = f.start();
+	assert.equal(
+		second.registered[0]!.create({ chatId: "new", agent: "teacher" }).length,
+		0,
+	);
 });

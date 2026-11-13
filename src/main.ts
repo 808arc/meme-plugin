@@ -8,6 +8,7 @@ import type {
 	PluginWidgetHandle,
 } from "learnharness-plugin-api";
 import { type ConceptResult, conceptFromView } from "./concept.ts";
+import { TEACHER_TOOL } from "./config.ts";
 import { element, mountMeme } from "./render.ts";
 import { imageBaseUrlProblem, LIMITS } from "./settings.ts";
 import type {
@@ -227,13 +228,18 @@ function settingsRows(
 			onChange: (useMemegen) => save({ useMemegen }),
 		},
 		{
-			type: "toggle",
-			key: "teacherTool",
-			label: "Let the teacher add memes",
-			description:
-				"The teacher may put one meme in the chat when it helps a concept stick. Only after you have tried the question. Off by default.",
-			value: settings.teacherTool,
-			onChange: (teacherTool) => save({ teacherTool }),
+			type: "dropdown",
+			key: "teacherMemes",
+			label: "Teacher memes (experimental)",
+			description: `In teaching sessions the teacher may put a meme in the chat, at most one per ${TEACHER_TOOL.turnsPerMeme} teacher turns and ${TEACHER_TOOL.automaticMemesPerDay} a day. It is told to wait until you have tried the question, but this is not yet enforced by LearnHarness.`,
+			value: settings.teacherMemes,
+			options: [
+				{ value: "off", label: "Off" },
+				{ value: "teacher", label: "Teacher decides" },
+				{ value: "wrong", label: "After wrong answers" },
+			],
+			onChange: (value) =>
+				save({ teacherMemes: value as Settings["teacherMemes"] }),
 		},
 		{
 			type: "text",

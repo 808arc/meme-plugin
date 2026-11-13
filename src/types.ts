@@ -93,9 +93,12 @@ export interface Settings {
 	useMemegen: boolean;
 	/** Where blank memegen images come from. Empty: never fetch, show text only. */
 	imageBaseUrl: string;
-	/** Let the teacher agent add a meme to the chat (tool `meme_teach`). Off by default. */
-	teacherTool: boolean;
+	/** Experimental: when the teacher agent may add a meme to the chat (tool `meme_teach`). */
+	teacherMemes: TeacherMemes;
 }
+
+/** off: never. teacher: the teacher decides, within the cap. wrong: only after a wrong answer. */
+export type TeacherMemes = "off" | "teacher" | "wrong";
 
 export interface Usage {
 	uses: number;

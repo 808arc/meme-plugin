@@ -1,6 +1,12 @@
 /** Settings defaults and validation, shared by the backend (authority) and the
  * settings page (inline validation). */
-import type { Settings } from "./types.ts";
+import type { Settings, TeacherMemes } from "./types.ts";
+
+export const TEACHER_MEMES: readonly TeacherMemes[] = Object.freeze([
+	"off",
+	"teacher",
+	"wrong",
+]);
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	model: null,
@@ -9,7 +15,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	cooldownGrowth: 2,
 	useMemegen: true,
 	imageBaseUrl: "https://api.memegen.link",
-	teacherTool: false,
+	teacherMemes: "off",
 });
 
 export const LIMITS = Object.freeze({
@@ -75,7 +81,6 @@ export function applySettingsPatch(
 			}
 			case "emphasis":
 			case "useMemegen":
-			case "teacherTool":
 				if (typeof value !== "boolean")
 					throw new Error(`${key} must be true or false`);
 				next[key] = value;
@@ -93,6 +98,13 @@ export function applySettingsPatch(
 				next.imageBaseUrl = trimmed;
 				break;
 			}
+			case "teacherMemes":
+				if (!TEACHER_MEMES.includes(value as TeacherMemes))
+					throw new Error(
+						`teacherMemes must be one of ${TEACHER_MEMES.join(", ")}`,
+					);
+				next.teacherMemes = value as TeacherMemes;
+				break;
 			default:
 				throw new Error(`Unknown setting: ${key}`);
 		}

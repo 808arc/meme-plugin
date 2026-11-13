@@ -651,3 +651,34 @@ test("the bundled catalogue is well formed", () => {
 	}
 	assert.ok(memegenMemes("").every((meme) => meme.image === ""));
 });
+
+test("a repeated concept reuses an earlier meme once the reuse share allows it", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, cooldownDays: 0 });
+	const asked = { prompt: "Who   backed CUDA?!" };
+	const fresh: GeneratedMeme[] = [];
+	for (let index = 0; index < 4; index++)
+		fresh.push(await call<GeneratedMeme>("generate", asked));
+	assert.ok(fresh.every((meme) => meme.reused === undefined));
+	const requestsBefore = f.requests.length;
+	const reused = await call<GeneratedMeme>("generate", {
+		prompt: "who backed cuda",
+	});
+	assert.equal(reused.reused, true);
+	assert.equal(f.requests.length, requestsBefore, "no model call for a reuse");
+	assert.deepEqual(reused.lines, fresh[0]!.lines);
+	assert.deepEqual(reused.concept, { prompt: "who backed cuda" });
+	// Asked to replace the meme on screen: a new generation, not the same one.
+	const replaced = await call<GeneratedMeme>("generate", {
+		...asked,
+		excludeMemeId: reused.meme.id,
+	});
+	assert.equal(replaced.reused, undefined);
+	assert.ok(f.requests.length > requestsBefore);
+	const store = JSON.parse(
+		fs.readFileSync(path.join(f.dataDirectory, "generated-memes.json"), "utf8"),
+	);
+	assert.equal(store.reused, 1);
+	assert.equal(store.fresh, 5);
+});

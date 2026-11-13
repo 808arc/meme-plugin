@@ -18,6 +18,15 @@ import {
 	templateRequest,
 } from "./prompts.ts";
 import { coolingDown, pickMeme, recordUse } from "./scheduler.ts";
+import {
+	chooseReuse,
+	conceptKey,
+	mayReuse,
+	readGenerated,
+	recordFresh,
+	recordReuse,
+	writeGenerated,
+} from "./reuse.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
@@ -303,6 +312,20 @@ export function activate(ctx: PluginBackendContext): () => void {
 			throw new Error(
 				"The meme pool is empty. Enable the bundled catalogue or add custom memes.",
 			);
+		// Before any paid request: an earlier meme for this concept, if the reuse share allows.
+		const store = readGenerated(ctx.dataDirectory);
+		const key = conceptKey(prompt);
+		const earlier = mayReuse(store)
+			? chooseReuse(
+					store.entries[key] ?? [],
+					new Set(memes.map((meme) => meme.id)),
+					exclude,
+				)
+			: undefined;
+		if (earlier) {
+			writeGenerated(ctx.dataDirectory, recordReuse(store));
+			return { ...earlier.meme, concept, reused: true };
+		}
 		const tried = new Set<string>([...unusable, ...(exclude ? [exclude] : [])]);
 		// Never let exclusions empty the pool: a repeat beats no meme.
 		if (memes.every((meme) => tried.has(meme.id))) tried.clear();
@@ -354,7 +377,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 					),
 				},
 			});
-			return {
+			const generated: GeneratedMeme = {
 				meme: {
 					id: meme.id,
 					origin: meme.origin,
@@ -371,6 +394,12 @@ export function activate(ctx: PluginBackendContext): () => void {
 				emphasis,
 				fact: filling.fact,
 			};
+			const { concept: _asked, ...stored } = generated;
+			writeGenerated(
+				ctx.dataDirectory,
+				recordFresh(store, key, stored, Date.now()),
+			);
+			return generated;
 		}
 		throw failure instanceof Error
 			? failure

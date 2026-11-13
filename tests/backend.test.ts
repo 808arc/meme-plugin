@@ -11,8 +11,8 @@ import type {
 import { activate, type BackendOptions } from "../src/backend.ts";
 import { BUTTONLESS, FACT_CHECK, TEACHER_TOOL } from "../src/config.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
-import { fillRequest } from "../src/prompts.ts";
 import { readRating } from "../src/reuse.ts";
+import { fillRequest, PROMPT_VERSION } from "../src/prompts.ts";
 import { parseTemplate } from "../src/template.ts";
 import type {
 	AutomaticResult,
@@ -1604,4 +1604,30 @@ test("only after wrong answers, and nothing once the shared daily budget is spen
 		prompt: "Who backed CUDA?",
 	});
 	assert.equal(manual.fact, "Jensen Huang backed CUDA.");
+});
+
+// Integration fixes (see docs/ and the commit messages).
+test("fix(I): templates cached by an older prompt version are rebuilt", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const first = f.start();
+	await first.call("save-settings", offline);
+	await first.call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
+	const cached = f.stored().templates["custom:proud-speech"];
+	assert.equal(cached.promptVersion, PROMPT_VERSION);
+	first.dispose();
+	const stored = f.stored();
+	stored.templates["custom:proud-speech"].promptVersion = PROMPT_VERSION - 1;
+	fs.writeFileSync(
+		path.join(f.dataDirectory, "state.json"),
+		JSON.stringify(stored),
+	);
+	const before = f.requests.length;
+	const second = f.start();
+	await second.call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
+	const templateCalls = f.requests
+		.slice(before)
+		.filter((request) =>
+			request.context.systemPrompt!.startsWith("You turn the caption"),
+		);
+	assert.equal(templateCalls.length, 1, "the stale template is asked again");
 });

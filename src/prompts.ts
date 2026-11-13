@@ -8,7 +8,7 @@ import {
 } from "./template.ts";
 import type { Concept, Meme, Template } from "./types.ts";
 
-export const PROMPT_VERSION = 2;
+export const PROMPT_VERSION = 3;
 
 export interface ModelRequest {
 	systemPrompt: string;

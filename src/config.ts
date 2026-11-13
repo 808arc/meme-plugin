@@ -22,6 +22,18 @@ export const FACT_CHECK = Object.freeze({
 	UNRELIABLE_MESSAGE: "Couldn't make a reliable meme for this question.",
 });
 
+// #8 meme card
+/** Notification topic for generate progress (backend events.emit -> frontend). */
+export const STAGE_TOPIC = "meme-stage";
+/** Progress stages of one generate call, in order, with the label the page shows.
+ * Add a stage here, then emit it from the backend where that step starts; the
+ * page shows any stage listed here and ignores unknown ones. */
+export const STAGES = Object.freeze({
+	selecting: "Finding a fitting meme…",
+	writing: "Writing the caption…",
+});
+export type MemeStage = keyof typeof STAGES;
+
 // #9 reuse
 /** Reuse of earlier generated memes for the same concept (src/reuse.ts). */
 export const REUSE = Object.freeze({

@@ -7,6 +7,7 @@ import type {
 	PluginAction,
 	PluginActionContext,
 	PluginFrontendContext,
+	PluginNotification,
 	PluginSettingsSchema,
 } from "learnharness-plugin-api";
 import { FACT_CHECK } from "../src/config.ts";
@@ -82,6 +83,8 @@ function fixture(
 
 	const activation = new AbortController();
 	const calls: { operation: string; input: unknown }[] = [];
+	const requestIds: string[] = [];
+	const listeners = new Set<(event: PluginNotification) => void>();
 	const actions = new Map<string, PluginAction>();
 	const placements: unknown[] = [];
 	const surfaces: {
@@ -137,8 +140,17 @@ function fixture(
 			return () => {};
 		},
 		async call(operation: string, input?: unknown) {
-			calls.push({ operation, input });
+			// Request ids are random; record them apart so call inputs stay comparable.
+			if (input && typeof input === "object" && "requestId" in input) {
+				const { requestId, ...rest } = input as Record<string, unknown>;
+				requestIds.push(requestId as string);
+				calls.push({ operation, input: rest });
+			} else calls.push({ operation, input });
 			return backend(operation, input);
+		},
+		onNotification(listener: (event: PluginNotification) => void) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
 		},
 		ui: {
 			mountButton: widget("button"),
@@ -203,6 +215,12 @@ function fixture(
 		)!;
 	return {
 		calls,
+		requestIds,
+		notify: (topic: string, data: unknown) => {
+			for (const listener of [...listeners])
+				listener({ pluginId: "meme-plugin", topic, data });
+		},
+		listeners,
 		actions,
 		placements,
 		surfaces,
@@ -254,7 +272,7 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 	assert.equal(surface.props.title, "Meme");
 	assert.match(
 		surface.container.querySelector(".meme-plugin-status")!.textContent!,
-		/Picking a meme/,
+		/Finding a fitting meme/,
 	);
 	assert.ok(surface.container.querySelector("[data-plugin-initial-focus]"));
 	await settle();
@@ -531,4 +549,78 @@ test("an unreliable fact shows a short message and the button still makes anothe
 	await (retry.props.onClick as () => Promise<void>)();
 	assert.equal(surface.querySelector(".meme-plugin-error"), null);
 	assert.equal(f.button("Another meme").props.disabled, false);
+});
+
+test("progress follows the backend's stage events for this request only", async (t) => {
+	let finish: (meme: GeneratedMeme) => void = () => {};
+	const f = fixture(t, (operation) =>
+		operation === "generate"
+			? new Promise<GeneratedMeme>((resolve) => {
+					finish = resolve;
+				})
+			: null,
+	);
+	void f.press(question);
+	await settle();
+	const surface = f.surfaces[0]!;
+	const label = () =>
+		surface.container.querySelector(".meme-plugin-status")!.textContent;
+	assert.equal(label(), "Finding a fitting meme…");
+	const [requestId] = f.requestIds;
+	assert.ok(requestId, "generate carries a request id");
+	f.notify("meme-stage", { requestId: "other-window", stage: "writing" });
+	assert.equal(
+		label(),
+		"Finding a fitting meme…",
+		"another request is ignored",
+	);
+	f.notify("meme-stage", { requestId, stage: "not-a-stage" });
+	assert.equal(
+		label(),
+		"Finding a fitting meme…",
+		"unknown stages are ignored",
+	);
+	f.notify("meme-stage", { requestId, stage: "writing" });
+	assert.equal(label(), "Writing the caption…");
+	finish(generated("custom:a", ["x"]));
+	await settle();
+	assert.equal(f.listeners.size, 0, "the stage listener ends with the request");
+});
+
+test("ratings go to the generated meme, show when reopened and roll back on failure", async (t) => {
+	let fail = false;
+	const f = fixture(t, (operation) => {
+		if (operation === "generate")
+			return {
+				...generated("custom:a", ["x"]),
+				generatedId: "g1",
+				rating: "down",
+			};
+		if (operation === "rate" && fail) throw new Error("disk full");
+		return null;
+	});
+	void f.press(question);
+	await settle();
+	const up = f.widgets.find(
+		(entry) => entry.kind === "button" && entry.props.label === "👍",
+	)!;
+	const down = f.widgets.find((entry) =>
+		String(entry.props.label).startsWith("👎"),
+	)!;
+	assert.equal(down.props.label, "👎 Not for me", "the stored rating shows");
+	assert.equal(up.props.disabled, false);
+	await (up.props.onClick as () => Promise<void>)();
+	assert.deepEqual(f.calls.at(-1), {
+		operation: "rate",
+		input: { id: "g1", rating: "up" },
+	});
+	assert.equal(up.props.label, "👍 Liked");
+	assert.equal(down.props.label, "👎");
+	fail = true;
+	await (up.props.onClick as () => Promise<void>)();
+	assert.equal(up.props.label, "👍 Liked", "a failed save rolls back");
+	assert.match(
+		f.surfaces[0]!.container.querySelector(".meme-plugin-notice")!.textContent!,
+		/Rating not saved\. disk full/,
+	);
 });

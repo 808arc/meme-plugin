@@ -11,6 +11,7 @@ import type {
 import { activate } from "../src/backend.ts";
 import { FACT_CHECK } from "../src/config.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
+import { readRating } from "../src/reuse.ts";
 import type { GeneratedMeme, MemeImage, PluginState } from "../src/types.ts";
 
 const cheap = { provider: "fixture", id: "cheap-model" };
@@ -96,6 +97,7 @@ function fixture(
 		);
 	}
 	const requests: PluginInferenceRequest[] = [];
+	const emitted: { topic: string; data: unknown }[] = [];
 	const memeOf = (request: PluginInferenceRequest) =>
 		/^Meme: (.+)$/m.exec(String(request.context.messages[0]!.content))![1]!;
 	const start = () => {
@@ -113,6 +115,12 @@ function fixture(
 			dataDirectory,
 			signal: controller.signal,
 			cleanup() {},
+			events: {
+				on: () => () => {},
+				emit(topic: string, data?: unknown) {
+					emitted.push({ topic, data });
+				},
+			},
 			handle(name: string, handler: (input: unknown) => unknown) {
 				handlers.set(name, handler);
 				return () => {
@@ -179,6 +187,7 @@ function fixture(
 	return {
 		dataDirectory,
 		requests,
+		emitted,
 		start,
 		memeOf,
 		stored: () =>
@@ -844,4 +853,44 @@ test("a repeated concept reuses an earlier meme once the reuse share allows it",
 	assert.equal(records[0]!.reused, 1);
 	assert.equal(records[0]!.fresh, 5);
 	assert.equal(records[0]!.memes.length, 5);
+});
+
+test("generate reports its stages to the requesting window", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const { call } = f.start();
+	await call("save-settings", offline);
+	const meme = await call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+		requestId: "r1",
+	});
+	assert.deepEqual(f.emitted, [
+		{ topic: "meme-stage", data: { requestId: "r1", stage: "selecting" } },
+		{ topic: "meme-stage", data: { requestId: "r1", stage: "writing" } },
+	]);
+	assert.equal(meme.rating, null, "a fresh meme is unrated");
+	f.emitted.length = 0;
+	await call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
+	assert.deepEqual(f.emitted, [], "no request id, no stage events");
+});
+
+test("rate stores the rating on the generated meme and rejects unknown ids", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const { call } = f.start();
+	await call("save-settings", offline);
+	const meme = await call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	await call("rate", { id: meme.generatedId, rating: "up" });
+	assert.equal(readRating(f.dataDirectory, meme.generatedId!), "up");
+	await call("rate", { id: meme.generatedId, rating: null });
+	assert.equal(readRating(f.dataDirectory, meme.generatedId!), null);
+	await assert.rejects(
+		call("rate", { id: "nope", rating: "up" }),
+		/Unknown meme/,
+	);
+	await assert.rejects(
+		call("rate", { id: meme.generatedId, rating: "meh" }),
+		/"up", "down" or null/,
+	);
+	assert.equal(f.stored().ratings, undefined, "ratings stay out of state.json");
 });

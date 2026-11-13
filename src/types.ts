@@ -131,6 +131,8 @@ export interface Settings {
 	webSearch: boolean;
 	/** The search agent to ask (model and provider). Null: no agent, no search. */
 	searchAgent: { provider: string; id: string } | null;
+	/** #31: the web search provider. "none" (default): no provider. */
+	searchProvider: SearchProvider;
 	/** #17: what the caption does. Answer states the fact (default). #32: Shuffle cycles the concrete modes. */
 	mode: MemeMode;
 	/** Experimental: when the teacher agent may add a meme to the chat (tool `meme_teach`). */
@@ -164,6 +166,9 @@ export interface Usage {
 	dueAt: number;
 }
 
+/** #31: web search providers the learner can choose. */
+export type SearchProvider = "none" | "tavily";
+
 export interface PluginState {
 	settings: Settings;
 	/** #32: the mode the next meme in this chat uses; equals settings.mode unless Shuffle. */
@@ -175,6 +180,8 @@ export interface PluginState {
 	automatic: { used: number; perDay: number };
 	/** Custom-library entries that were skipped, with the reason. */
 	problems: string[];
+	/** #31: true when the Tavily key is set in the environment. The key itself is never sent. */
+	searchKeyFound: boolean;
 }
 
 /** #21: result of "Export my memes". */

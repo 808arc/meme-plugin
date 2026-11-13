@@ -95,7 +95,8 @@ replaces only the installed `dist/`.
 | Own memes first (%) | 100 | Chance a pick is one of your own memes while one is out of cooldown. 100: always. Lower mixes in the catalogue. |
 | Custom memes folder | empty (`data/`) | Absolute path to a folder with `custom-memes.json` and `custom-images/`. Only read. |
 | Search the web for memes | on | Before generating, look for an existing meme through the search agent. Off: local sources and generation only. |
-| Search agent | none | The model and provider that search uses. Without one, settings show "On, but needs a search agent" and nothing is searched. |
+| Search provider | none | none or Tavily. Tavily needs `TAVILY_API_KEY` in the environment; no key, nothing is searched. Tavily gives no licence, so its hits are filtered out. |
+| Search agent | none | The model and provider that search uses. Without one, and with no provider, nothing is searched. |
 
 **Reset cooldowns** makes every meme eligible again.
 
@@ -160,7 +161,7 @@ deletes your files.
   per meme. Images are cached in `data/image-cache/`.
 - Nothing else. Writes only in `data/`, even with a custom memes folder elsewhere
   (read only) and for exports. Learning records untouched.
-- Web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme-plugin/issues/11)). A settings switch turns it off.
+- Web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme-plugin/issues/11)). Tavily, when chosen: the concept goes to Tavily as the query ([#31](https://github.com/808arc/meme-plugin/issues/31)). A settings switch turns it off.
 - Loading a web meme's image exposes your IP address to the host of that image.
 
 ## Development

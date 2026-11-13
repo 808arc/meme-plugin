@@ -590,6 +590,7 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 		customFolder: "",
 		webSearch: true,
 		searchAgent: null,
+		searchProvider: "none",
 		mode: "answer",
 		teacherMemes: "off",
 		automaticMemes: "off",
@@ -2047,4 +2048,36 @@ test("#32 shuffle: teacher and automatic memes stay Answer-only", async (t) => {
 		prompt: "Still answer",
 	});
 	assert.equal(next.mode, "answer");
+});
+
+// #31 tavily search
+
+test("tavily: the key never appears in settings output, and an error means no web meme", async (t) => {
+	const key = "tvly-backend-key-do-not-leak";
+	const calls: string[] = [];
+	const w = fixture(t, { memes: [custom[0]] });
+	const { call } = w.start({
+		env: { TAVILY_API_KEY: key },
+		fetch: (async (url: string | URL, init?: RequestInit) => {
+			calls.push(
+				String(
+					init?.headers &&
+						(init.headers as Record<string, string>).authorization,
+				),
+			);
+			return new Response("{}", { status: 503 });
+		}) as typeof fetch,
+	});
+	const saved = await call<PluginState>("save-settings", {
+		searchProvider: "tavily",
+	});
+	const shown = await call<PluginState>("get-state");
+	assert.equal(saved.searchKeyFound, true);
+	assert.equal(saved.settings.searchProvider, "tavily");
+	assert.equal(JSON.stringify(saved).includes(key), false);
+	assert.equal(JSON.stringify(shown).includes(key), false);
+	const found = await call<GeneratedMeme>("generate", ask);
+	assert.equal(found.meme.origin, "custom", "HTTP 503 is no hit");
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0], `Bearer ${key}`);
 });

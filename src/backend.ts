@@ -71,6 +71,7 @@ import {
 	shortlist,
 } from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
+import { type Fetch, searchAgentFor, tavilyKey } from "./tavily.ts";
 import {
 	judgeRequest,
 	parseJudgement,
@@ -233,6 +234,10 @@ export interface BackendOptions {
 	/** Builds the search agent from the learner's settings. Without one, web search
 	 * is skipped and the plugin generates. The host supplies the provider. */
 	createSearchAgent?: (settings: Settings) => SearchAgent | null;
+	/** #31: environment the Tavily key is read from. Default: process.env. */
+	env?: NodeJS.ProcessEnv;
+	/** #31: HTTP layer for Tavily. Default: global fetch. Tests inject a stub. */
+	fetch?: Fetch;
 }
 
 export function activate(
@@ -320,6 +325,7 @@ export function activate(
 			},
 			customFolder: customDirectory(),
 			problems: current.problems,
+			searchKeyFound: !!tavilyKey(options.env ?? process.env),
 			automatic: {
 				used: automaticUsed(),
 				perDay: TEACHER_TOOL.automaticMemesPerDay,
@@ -547,9 +553,13 @@ export function activate(
 		concept: Concept,
 		exclude: string | undefined,
 	): Promise<GeneratedMeme | null> {
-		const { webSearch, searchAgent } = state.settings;
-		if (!webSearch || !searchAgent) return null;
-		const agent = options.createSearchAgent?.(state.settings);
+		const { webSearch, searchAgent, searchProvider } = state.settings;
+		if (!webSearch || (!searchAgent && searchProvider === "none")) return null;
+		const agent = (
+			options.createSearchAgent ??
+			((settings: Settings) =>
+				searchAgentFor(settings, options.env ?? process.env, options.fetch))
+		)(state.settings);
 		if (!agent) return null;
 		stage("search");
 		const hits = await searchCandidates(agent, concept, ctx.signal);

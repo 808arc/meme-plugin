@@ -47,6 +47,7 @@ const state: PluginState = {
 		customFolder: "",
 		webSearch: true,
 		searchAgent: null,
+		searchProvider: "none",
 		mode: "answer",
 		teacherMemes: "off",
 		automaticMemes: "off",
@@ -54,6 +55,7 @@ const state: PluginState = {
 	pool: { memegen: 209, custom: 1, coolingDown: 3 },
 	customFolder: "/plugins/meme-plugin/data",
 	problems: ["custom-memes.json entry 2: bad"],
+	searchKeyFound: false,
 	automatic: { used: 0, perDay: 10 },
 };
 
@@ -552,6 +554,7 @@ test("settings publish only what the backend accepted", async (t) => {
 			["cooldownGrowth", "number", 2],
 			["rejectCooldownDays", "number", 1],
 			["webSearch", "toggle", true],
+			["searchProvider", "dropdown", "none"],
 			["useMemegen", "toggle", true],
 			["teacherMemes", "dropdown", "off"],
 			["automaticMemes", "dropdown", "off"],

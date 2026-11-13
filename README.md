@@ -5,8 +5,8 @@ Turns each concept learnharness asks about into a meme.
 ## How it works
 
 1. Take the concept from the learnharness prompt.
-2. Pick a random modern image meme. Once used, store it and don't reuse it for a while (reverse spaced repetition).
-3. Reduce its caption to a template: fixed memetic phrasing + fillable slots.
+2. Pick random modern image meme. Store used; skip during cooldown (reverse spaced repetition).
+3. Reduce caption to template: fixed phrasing + fillable slots.
 4. Fill the slots with facts about the concept.
 5. Optionally add emphasis in the meme character's voice.
 
@@ -40,11 +40,9 @@ makes a new one with a different image; **Copy caption** copies the text. Pressi
 **Meme this** again closes it. The action is also listed under Settings → Keyboard,
 unbound until you assign a chord.
 
-- The meme states the answer. Open it when you want the answer to stick, not before
-  you have tried the question.
-- A question you have not revealed yet is not read.
-- With no question on screen, the plugin uses the teacher's latest message, or asks you
-  to type a concept.
+- Meme states the answer. Open after trying the question, not before.
+- Unrevealed question is not read.
+- No question on screen: uses teacher's latest message, or asks you to type a concept.
 
 Each meme costs one short model request, plus one more the first time a given meme is
 used (its template is then cached).
@@ -61,9 +59,8 @@ npm install
 npm run build
 ```
 
-`<plugins-directory>` is shown in **Settings → Community plugins**. The folder must be
-named `meme-plugin`. Then refresh the list, enable **Meme plugin**, and restart
-LearnHarness after later code changes.
+`<plugins-directory>` is shown in **Settings → Community plugins**. Folder must be
+named `meme-plugin`. Refresh list. Enable **Meme plugin**. Restart LearnHarness after code changes.
 
 Building somewhere else: `npm run install:local -- "<plugins-directory>"` builds and
 replaces only the installed `dist/`.
@@ -109,8 +106,7 @@ the one in the example above, in `<plugins-directory>/meme-plugin/data/custom-me
   `align`.
 - `source` (optional): a link shown as "about this meme".
 
-Entries with mistakes are skipped and listed on the settings page. Changes are picked
-up on the next meme; no restart needed.
+Bad entries skipped, listed in settings. Changes apply next meme; no restart.
 
 ## What leaves your machine
 
@@ -118,8 +114,7 @@ up on the next meme; no restart needed.
   LearnHarness's own connection.
 - The image server receives only the meme's id (for example `/images/drake.jpg`), once
   per meme. Images are cached in `data/image-cache/`.
-- Nothing else. The plugin writes only inside its own `data/` directory and does not
-  change learning records.
+- Nothing else. Writes only in `data/`. Learning records untouched.
 
 ## Development
 
@@ -137,15 +132,23 @@ Source map: `src/concept.ts` (step 1), `src/scheduler.ts` and `src/library.ts`
 (step 2), `src/prompts.ts` and `src/template.ts` (steps 3 to 5), `src/backend.ts`
 (storage and model calls), `src/main.ts` and `src/render.ts` (interface).
 
-The model only proposes. A template is accepted only if putting the original words
-back into its slots reproduces the original caption, and the final text is assembled
-by the plugin from the template, so the meme's fixed phrasing cannot be reworded.
+Model only proposes. Template accepted only if original words in slots reproduce the
+original caption. Plugin assembles final text; fixed phrasing cannot be reworded.
 
 ## Limits
 
 - Facts come from the model and are not checked against a source.
 - Text placement follows memegen's box positions; rotated boxes are approximate.
 - Animated memes are shown as a still image.
+
+## Research
+
+Evidence behind the design choices:
+
+- [docs/meme-evidence.md](docs/meme-evidence.md): humor and memory; how memes spread and persuade.
+- [docs/humor-structure.md](docs/humor-structure.md): how humor works in text; what it means for captions.
+
+Key findings are unverified until ticked off in each file.
 
 ## License
 

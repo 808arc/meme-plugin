@@ -46,6 +46,9 @@ const stubGenerate: Complete = async (request) => {
 			voice: "",
 		});
 	}
+	// The Answer-mode fact check (#7): the stub always agrees.
+	if (request.systemPrompt.startsWith("You check one study fact"))
+		return JSON.stringify({ agrees: true });
 	const values = Object.fromEntries(
 		[...request.user.matchAll(/^- (\w+): /gm)].map((match) => [
 			match[1],
@@ -149,7 +152,8 @@ test("a single bad reply is corrected by the one retry", async () => {
 	};
 	const made = await makeMeme(EVAL_CONCEPTS[0]!, meme, generate);
 	assert.equal(made.lines.join(" / "), "filled / filled");
-	assert.equal(calls, 3);
+	// Template (bad, then corrected), fill, and the fact check.
+	assert.equal(calls, 4);
 });
 
 test("a failing generator is recorded per concept and the means stay null when nothing scores", async () => {
@@ -167,4 +171,22 @@ test("a failing generator is recorded per concept and the means stay null when n
 	assert.equal(run.rows[0]!.error, "generation: quota exceeded");
 	assert.deepEqual(run.means, { fit: null, humor: null, accuracy: null });
 	assert.match(formatReport(run), /n\/a/);
+});
+
+test("fix(H): the eval makes Answer memes with the answer key and the fact check", async () => {
+	let checks = 0;
+	const generate: Complete = async (request) => {
+		if (request.systemPrompt.startsWith("You check one study fact")) {
+			checks++;
+			return JSON.stringify({ agrees: checks > 1 });
+		}
+		if (request.systemPrompt.startsWith("You write the caption")) {
+			assert.match(request.user, /The correct answer is:/);
+			assert.match(request.user, /The fact must say so\./);
+		}
+		return stubGenerate(request);
+	};
+	const made = await makeMeme(EVAL_CONCEPTS[0]!, meme, generate);
+	assert.equal(checks, 2, "a disagreeing fact is refilled once");
+	assert.equal(made.fact, "A stub fact.");
 });

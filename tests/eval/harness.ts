@@ -5,6 +5,8 @@
  * text. The real run supplies live models (see run.ts); the unit tests supply stubs.
  * Replies are parsed exactly as the backend parses them, with no retry: a reply that
  * fails to parse is recorded as an error, so the eval measures first-try reliability. */
+import { FACT_CHECK } from "../../src/config.ts";
+import { agreementRequest, parseAgreement } from "../../src/factcheck.ts";
 import {
 	PROMPT_VERSION,
 	extractJson,
@@ -18,7 +20,7 @@ import {
 	parseFilling,
 	parseTemplate,
 } from "../../src/template.ts";
-import type { Meme } from "../../src/types.ts";
+import type { Concept, Meme } from "../../src/types.ts";
 import type { EvalConcept } from "./concepts.ts";
 
 export type Complete = (request: ModelRequest) => Promise<string>;
@@ -135,7 +137,9 @@ export async function ask<T>(
 	}
 }
 
-/** Steps 3 to 5 of the plugin, without the cache and the emphasis. */
+/** Steps 3 to 5 of the plugin in Answer mode, without the cache and the emphasis:
+ * template, fill with the answer key, then the fact check (#7). A fact that does not
+ * agree is refilled, up to the backend's attempt limit, and then the meme is an error. */
 export async function makeMeme(
 	concept: EvalConcept,
 	meme: Meme,
@@ -144,25 +148,34 @@ export async function makeMeme(
 	const template = await ask(generate, templateRequest(meme), (raw) =>
 		parseTemplate(raw, meme.caption),
 	);
-	const filling = await ask(
-		generate,
-		fillRequest({
-			meme,
-			template,
-			concept: {
-				prompt: concept.prompt,
-				...(concept.context ? { context: concept.context } : {}),
-			},
-			emphasis: false,
-		}),
-		(raw) => parseFilling(raw, template),
-	);
-	return {
-		templateLines: template.lines,
-		values: filling.values,
-		fact: filling.fact,
-		lines: assemble(template, filling.values, null),
+	const asked: Concept = {
+		prompt: concept.prompt,
+		...(concept.context ? { context: concept.context } : {}),
+		answer: { correct: [concept.answer], others: [] },
 	};
+	let avoid: string | undefined;
+	for (let attempt = 1; ; attempt++) {
+		const filling = await ask(
+			generate,
+			fillRequest({ meme, template, concept: asked, emphasis: false, avoid }),
+			(raw) => parseFilling(raw, template),
+		);
+		const agrees = await ask(
+			generate,
+			agreementRequest({ concept: asked, fact: filling.fact }),
+			parseAgreement,
+		);
+		if (agrees)
+			return {
+				templateLines: template.lines,
+				values: filling.values,
+				fact: filling.fact,
+				lines: assemble(template, filling.values, null),
+			};
+		if (attempt >= FACT_CHECK.MAX_FACT_ATTEMPTS)
+			throw new Error(FACT_CHECK.UNRELIABLE_MESSAGE);
+		avoid = filling.fact;
+	}
 }
 
 export interface EvalRow {

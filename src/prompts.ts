@@ -65,8 +65,13 @@ export function fillRequest(input: {
 	template: Template;
 	concept: Concept;
 	emphasis: boolean;
+	/** A fact from an earlier attempt that did not agree with the question. */
+	avoid?: string;
 }): ModelRequest {
 	const { template } = input;
+	const answer = input.concept.answer
+		? `The correct answer is: ${input.concept.answer.correct.join(" | ")}. The fact must say so.`
+		: "";
 	const emphasis = input.emphasis
 		? `- You may add one short interjection (at most ${MAX_EMPHASIS_LENGTH} characters) in the character's voice that repeats the key term for emphasis, placed after one of the numbered sentences. Use null when it would not sound right.`
 		: '- Set "emphasis" to null.';
@@ -87,6 +92,10 @@ export function fillRequest(input: {
 			`The learner is being asked:\n${input.concept.prompt}`,
 			input.concept.context
 				? `Shown with the question:\n${input.concept.context}`
+				: "",
+			answer,
+			input.avoid
+				? `An earlier attempt wrote this fact, which does not agree with the question: "${input.avoid}". Write a fact that does.`
 				: "",
 			`Meme: ${input.meme.name}${template.voice ? `\nCharacter voice: ${template.voice}` : ""}`,
 			`Template sentences:\n${numbered(sentences(template).map((sentence) => sentence.text))}`,

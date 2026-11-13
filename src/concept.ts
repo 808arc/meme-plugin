@@ -1,7 +1,7 @@
 /** Step 1 of the README: take the concept from what LearnHarness is asking.
  * Reads only the host's detached session snapshot; never the page DOM. */
 import type { PluginSessionViewContext } from "learnharness-plugin-api";
-import type { Concept } from "./types.ts";
+import type { Concept, ConceptAnswer } from "./types.ts";
 
 export const MAX_PROMPT_LENGTH = 2000;
 export const MAX_CONTEXT_LENGTH = 2000;
@@ -15,7 +15,11 @@ export type ConceptResult =
 const clip = (text: string, limit: number) =>
 	text.length > limit ? text.slice(0, limit - 1).trimEnd() + "…" : text;
 
-function found(prompt: string, context?: string): ConceptResult {
+function found(
+	prompt: string,
+	context?: string,
+	answer?: ConceptAnswer,
+): ConceptResult {
 	const question = prompt.trim();
 	if (!question) return { status: "none" };
 	const extra = context?.trim();
@@ -24,6 +28,7 @@ function found(prompt: string, context?: string): ConceptResult {
 		concept: {
 			prompt: clip(question, MAX_PROMPT_LENGTH),
 			...(extra ? { context: clip(extra, MAX_CONTEXT_LENGTH) } : {}),
+			...(answer ? { answer } : {}),
 		},
 	};
 }
@@ -50,6 +55,23 @@ function latestTeacherText(view: PluginSessionViewContext): string {
 	return "";
 }
 
+/** Which labels are correct, when the host says so. Absent or unusable: no answer key. */
+export function answerFrom(
+	options: readonly { label: string }[],
+	correctIndices: readonly number[] | undefined,
+): ConceptAnswer | undefined {
+	if (!correctIndices?.length) return undefined;
+	const labels = options.map((option) => option.label.trim());
+	const correct = new Set(
+		correctIndices.filter((index) => labels[index]).map((index) => index),
+	);
+	if (!correct.size) return undefined;
+	return {
+		correct: [...correct].map((index) => labels[index]!),
+		others: labels.filter((_, index) => !correct.has(index)).filter(Boolean),
+	};
+}
+
 export function conceptFromView(view: PluginSessionViewContext): ConceptResult {
 	const input = view.input;
 	switch (input.type) {
@@ -66,7 +88,15 @@ export function conceptFromView(view: PluginSessionViewContext): ConceptResult {
 			]
 				.filter(Boolean)
 				.join("\n\n");
-			return found(input.question.question, context);
+			// The typed view omits the answer key; read it if a host supplies it, else self-check only.
+			const { correctIndices } = input.question as unknown as {
+				correctIndices?: readonly number[];
+			};
+			return found(
+				input.question.question,
+				context,
+				answerFrom(input.question.options, correctIndices),
+			);
 		}
 		case "plugin-question-answer":
 			return input.revealed

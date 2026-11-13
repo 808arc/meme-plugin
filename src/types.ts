@@ -63,6 +63,15 @@ export interface Concept {
 	prompt: string;
 	/** Supporting material shown with the question, if any. */
 	context?: string;
+	/** The question's answer options, when the host marks which ones are correct. */
+	answer?: ConceptAnswer;
+}
+
+export interface ConceptAnswer {
+	/** Labels of the correct option(s). */
+	correct: string[];
+	/** Labels of the options that are wrong. */
+	others: string[];
 }
 
 /** What the backend returns for one generated meme. */

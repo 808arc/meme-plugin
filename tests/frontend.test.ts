@@ -9,6 +9,7 @@ import type {
 	PluginFrontendContext,
 	PluginSettingsSchema,
 } from "learnharness-plugin-api";
+import { FACT_CHECK } from "../src/config.ts";
 import { defaultBoxes } from "../src/library.ts";
 import { activate } from "../src/main.ts";
 import type { GeneratedMeme, PluginState } from "../src/types.ts";
@@ -509,4 +510,25 @@ test("settings publish only what the backend accepted", async (t) => {
 	assert.equal(picker.props.value, undefined);
 	await (f.button("Reset cooldowns").props.onClick as () => Promise<void>)();
 	assert.match(container.textContent!, /0 cooling down/);
+});
+
+test("an unreliable fact shows a short message and the button still makes another meme", async (t) => {
+	let attempt = 0;
+	const f = fixture(t, (operation) => {
+		if (operation === "get-image") return null;
+		if (++attempt === 1) throw new Error(FACT_CHECK.UNRELIABLE_MESSAGE);
+		return generated("custom:a", ["first", "second"]);
+	});
+	void f.press(question);
+	await settle();
+	const surface = f.surfaces[0]!.container;
+	assert.equal(
+		surface.querySelector(".meme-plugin-error")!.textContent,
+		"Couldn't make a reliable meme for this question.",
+	);
+	const retry = f.button("Try again");
+	assert.equal(retry.props.disabled, false);
+	await (retry.props.onClick as () => Promise<void>)();
+	assert.equal(surface.querySelector(".meme-plugin-error"), null);
+	assert.equal(f.button("Another meme").props.disabled, false);
 });

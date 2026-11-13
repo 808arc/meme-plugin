@@ -8,7 +8,13 @@ import type {
 	PluginModelSpec,
 } from "learnharness-plugin-api";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
-import { PICK_STEP } from "./config.ts";
+import { FACT_CHECK, PICK_STEP } from "./config.ts";
+import {
+	agreementRequest,
+	parseAgreement,
+	parseAnswer,
+	quickAgreement,
+} from "./factcheck.ts";
 import { loadImage } from "./images.ts";
 import { loadCustomMemes, memegenMemes } from "./library.ts";
 import {
@@ -24,6 +30,7 @@ import { applySettingsPatch, readSettings } from "./settings.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
 	Concept,
+	Filling,
 	GeneratedMeme,
 	Meme,
 	MemeImage,
@@ -318,6 +325,42 @@ export function activate(ctx: PluginBackendContext): () => void {
 		return template;
 	}
 
+	/** Steps 4 and 5 plus the fact check. A fact that disagrees with the question is
+	 * regenerated, a bounded number of times; after that the meme is not shown at all. */
+	async function fillChecked(
+		model: PluginModelSpec,
+		meme: Meme,
+		template: Template,
+		concept: Concept,
+	): Promise<Filling> {
+		let avoid: string | undefined;
+		for (let attempt = 1; ; attempt++) {
+			const filling = await ask(
+				model,
+				fillRequest({
+					meme,
+					template,
+					concept,
+					emphasis: state.settings.emphasis,
+					avoid,
+				}),
+				(raw) => parseFilling(raw, template),
+			);
+			// Certain agreement needs no model call; otherwise a cheap self-check decides.
+			const verdict =
+				(concept.answer && quickAgreement(filling.fact, concept.answer)) ??
+				(await ask(
+					model,
+					agreementRequest({ concept, fact: filling.fact }),
+					parseAgreement,
+				));
+			if (verdict) return filling;
+			if (attempt >= FACT_CHECK.MAX_FACT_ATTEMPTS)
+				throw new Error(FACT_CHECK.UNRELIABLE_MESSAGE);
+			avoid = filling.fact;
+		}
+	}
+
 	async function generate(input: unknown): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
@@ -329,11 +372,13 @@ export function activate(ctx: PluginBackendContext): () => void {
 					value.context.length > MAX_CONTEXT_LENGTH))
 		)
 			throw new Error("The question is too long to turn into a meme.");
+		const answer = parseAnswer(value.answer);
 		const concept: Concept = {
 			prompt,
 			...(typeof value.context === "string" && value.context.trim()
 				? { context: value.context.trim() }
 				: {}),
+			...(answer ? { answer } : {}),
 		};
 		const exclude =
 			typeof value.excludeMemeId === "string" ? value.excludeMemeId : undefined;
@@ -372,17 +417,8 @@ export function activate(ctx: PluginBackendContext): () => void {
 				failure = error;
 				continue;
 			}
-			// Steps 4 and 5.
-			const filling = await ask(
-				model,
-				fillRequest({
-					meme,
-					template,
-					concept,
-					emphasis: state.settings.emphasis,
-				}),
-				(raw) => parseFilling(raw, template),
-			);
+			// Steps 4 and 5, then the fact check. A meme whose fact cannot be made to agree is not shown.
+			const filling = await fillChecked(model, meme, template, concept);
 			const emphasis = state.settings.emphasis ? filling.emphasis : null;
 			// "Once used, store it": only a meme that was actually produced starts its cooldown.
 			save({

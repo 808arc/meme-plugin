@@ -46,6 +46,7 @@ const state: PluginState = {
 		customFolder: "",
 		webSearch: true,
 		searchAgent: null,
+		mode: "answer",
 	},
 	pool: { memegen: 209, custom: 1, coolingDown: 3 },
 	customFolder: "/plugins/meme-plugin/data",
@@ -436,7 +437,9 @@ test("an unrevealed question is not read; with no question the learner types a c
 		f.surfaces[0]!.container.querySelector(".meme-plugin-status")!.textContent!,
 		/Reveal the question first/,
 	);
-	assert.equal(f.calls.length, 0);
+	// #17: the mode is looked up; the question itself is not sent anywhere.
+	assert.deepEqual(f.calls, [{ operation: "get-state", input: undefined }]);
+	f.calls.length = 0;
 	void f.press(question);
 
 	void f.press({ type: "text" });
@@ -494,6 +497,7 @@ test("settings publish only what the backend accepted", async (t) => {
 	assert.deepEqual(
 		rows().map((row) => [row.key, row.type, row.value]),
 		[
+			["mode", "dropdown", "answer"],
 			["emphasis", "toggle", true],
 			["cooldownDays", "number", 14],
 			["cooldownGrowth", "number", 2],
@@ -667,4 +671,89 @@ test("ratings go to the generated meme, show when reopened and roll back on fail
 		f.surfaces[0]!.container.querySelector(".meme-plugin-notice")!.textContent!,
 		/Rating not saved\. disk full/,
 	);
+});
+
+// #17 meme modes
+
+test("Hint mode reads an unrevealed question through the whitelist and keeps it off screen", async (t) => {
+	const hinted: GeneratedMeme = {
+		...generated("custom:a", ["a GPU maker's boss"]),
+		mode: "hint",
+		fact: "Think of who sells GeForce.",
+	};
+	const f = fixture(t, (operation) =>
+		operation === "get-state"
+			? { ...state, settings: { ...state.settings, mode: "hint" } }
+			: operation === "generate"
+				? hinted
+				: null,
+	);
+	void f.press({
+		type: "answer",
+		revealed: false,
+		question: {
+			question: "Who backed CUDA?",
+			options: [{ label: "Jensen Huang", value: "a" }],
+			correctIndices: [0],
+			explanation: "secret",
+		},
+		draft: { values: ["a"], text: "secret" },
+	});
+	await settle();
+	assert.deepEqual(f.calls.slice(0, 2), [
+		{ operation: "get-state", input: undefined },
+		{
+			operation: "generate",
+			input: {
+				prompt: "Who backed CUDA?",
+				context: "Answer options the learner will see: Jensen Huang",
+				options: ["Jensen Huang"],
+				early: true,
+			},
+		},
+	]);
+	const surface = f.surfaces[0]!.container;
+	assert.equal(
+		surface.querySelector(".meme-plugin-concept")!.textContent,
+		"Before you reveal the question",
+	);
+	assert.equal(
+		surface.querySelector(".meme-plugin-fact")!.textContent,
+		"Hint: Think of who sells GeForce.",
+	);
+	assert.ok(!surface.textContent!.includes("Who backed CUDA?"));
+	// Another meme keeps the early flag.
+	await (f.button("Another meme").props.onClick as () => Promise<void>)();
+	assert.equal((f.calls.at(-2)!.input as { early?: boolean }).early, true);
+});
+
+test("Answer mode still refuses an unrevealed question; revealed options travel for the check", async (t) => {
+	const f = fixture(t, (operation) =>
+		operation === "get-state"
+			? state
+			: operation === "generate"
+				? generated("custom:a", ["x"])
+				: null,
+	);
+	void f.press({ ...question, revealed: false });
+	await settle();
+	assert.deepEqual(f.calls, [{ operation: "get-state", input: undefined }]);
+	assert.match(
+		f.surfaces[0]!.container.querySelector(".meme-plugin-status")!.textContent!,
+		/Reveal the question first/,
+	);
+	void f.press(question);
+	void f.press({
+		...question,
+		question: {
+			question: "Who backed CUDA?",
+			options: [{ label: "Jensen Huang", value: "a" }],
+		},
+	});
+	await settle();
+	assert.deepEqual((f.calls.at(-2) ?? f.calls.at(-1))!.input, {
+		prompt: "Who backed CUDA?",
+		context: "Answer options shown to the learner: Jensen Huang",
+		options: ["Jensen Huang"],
+	});
 });

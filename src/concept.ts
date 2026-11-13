@@ -114,3 +114,60 @@ export function conceptFromView(view: PluginSessionViewContext): ConceptResult {
 			return found(latestTeacherText(view));
 	}
 }
+
+// #17 meme modes. Design: docs/meme-modes.md.
+
+/** What Hint and Think may read from a question the learner has not revealed. */
+export interface EarlyRead {
+	concept: Concept;
+	/** Option labels, for the no-answer check. Never which one is correct. */
+	options: string[];
+}
+
+const text = (value: unknown) => (typeof value === "string" ? value : "");
+const labels = (options: unknown): string[] =>
+	Array.isArray(options)
+		? options.map((option) => text(option?.label).trim()).filter(Boolean)
+		: [];
+
+/** Pre-reveal read path, for Hint and Think only. Fields are whitelisted: question
+ * text, context and option labels. Never the draft, payload, history, or any answer
+ * key the host might attach. Anything else unrevealed stays unread (null). */
+export function conceptBeforeReveal(
+	view: PluginSessionViewContext,
+): EarlyRead | null {
+	const input = view.input;
+	if (input.type === "answer" && !input.revealed) {
+		const question = input.question;
+		const options = labels(question.options);
+		const result = found(
+			text(question.question),
+			[
+				text(question.context),
+				options.length
+					? `Answer options the learner will see: ${options.join(" | ")}`
+					: "",
+			]
+				.filter(Boolean)
+				.join("\n\n"),
+		);
+		return result.status === "found"
+			? { concept: result.concept, options }
+			: null;
+	}
+	if (input.type === "plugin-question-answer" && !input.revealed) {
+		const result = found(text(input.input.question));
+		return result.status === "found"
+			? { concept: result.concept, options: [] }
+			: null;
+	}
+	return null;
+}
+
+/** Option labels of a revealed native question, for the no-answer check. */
+export function optionLabels(view: PluginSessionViewContext): string[] {
+	const input = view.input;
+	return input.type === "answer" && input.revealed
+		? labels(input.question.options)
+		: [];
+}

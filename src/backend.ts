@@ -10,6 +10,7 @@ import type {
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
 import {
 	FACT_CHECK,
+	MEME_MODES,
 	type MemeStage,
 	OWN_MEMES,
 	PICK_STEP,
@@ -29,6 +30,7 @@ import {
 	loadCustomMemes,
 	memegenMemes,
 } from "./library.ts";
+import { modeFillRequest, parseModeFilling, readOptions } from "./modes.ts";
 import {
 	extractJson,
 	fillRequest,
@@ -524,6 +526,13 @@ export function activate(
 			(typeof value.excludeMemeId === "string"
 				? value.excludeMemeId
 				: undefined);
+		// #17: the mode is the backend's stored setting, read once per meme. A question
+		// read before reveal is refused unless the mode allows it, before any model call.
+		const mode = state.settings.mode;
+		const early = value.early === true;
+		if (early && !(MEME_MODES.preReveal as readonly string[]).includes(mode))
+			throw new Error("Reveal the question first. A meme would show it early.");
+		const options = mode === "answer" ? [] : readOptions(value.options);
 
 		const memes = pool().memes;
 		if (rejected && memes.some((meme) => meme.id === rejected))
@@ -610,8 +619,27 @@ export function activate(
 				failure = error;
 				continue;
 			}
-			// Steps 4 and 5, then the fact check. A meme whose fact cannot be made to agree is not shown.
-			const filling = await fillChecked(model, meme, template, concept);
+			// Steps 4 and 5. Answer mode: then the fact check (#7); a meme whose fact
+			// cannot be made to agree is not shown. Hint and Think (#17): the no-answer
+			// check; a caption that gives the answer away is rejected and, after one
+			// correction, another meme is tried.
+			let filling: Filling;
+			if (mode === "answer")
+				filling = await fillChecked(model, meme, template, concept);
+			else {
+				try {
+					filling = await ask(
+						model,
+						modeFillRequest(mode, { meme, template, concept, early }),
+						(raw) => parseModeFilling(raw, template, options),
+					);
+				} catch (error) {
+					alive();
+					if (!(error instanceof RejectedReply)) throw error;
+					failure = error;
+					continue;
+				}
+			}
 			const emphasis = state.settings.emphasis ? filling.emphasis : null;
 			// "Once used, store it": only a meme that was actually produced starts its cooldown.
 			markUsed(meme.id);
@@ -630,6 +658,7 @@ export function activate(
 				values: filling.values,
 				emphasis,
 				fact: filling.fact,
+				...(mode === "answer" ? {} : { mode }),
 			};
 			const entry = newEntry(stored, Date.now());
 			// Re-read: a rating may have been written while the model was answering.

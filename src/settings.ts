@@ -1,6 +1,6 @@
 /** Settings defaults and validation, shared by the backend (authority) and the
  * settings page (inline validation). */
-import { OWN_MEMES } from "./config.ts";
+import { MEME_MODES, type MemeMode, OWN_MEMES } from "./config.ts";
 import type { Settings } from "./types.ts";
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	customFolder: OWN_MEMES.folder,
 	webSearch: true,
 	searchAgent: null,
+	mode: MEME_MODES.defaultMode,
 });
 
 export const LIMITS = Object.freeze({
@@ -140,6 +141,11 @@ export function applySettingsPatch(
 				next.imageBaseUrl = trimmed;
 				break;
 			}
+			case "mode":
+				if (!MEME_MODES.modes.includes(value as MemeMode))
+					throw new Error(`mode must be one of ${MEME_MODES.modes.join(", ")}`);
+				next.mode = value as MemeMode;
+				break;
 			default:
 				throw new Error(`Unknown setting: ${key}`);
 		}

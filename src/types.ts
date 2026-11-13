@@ -1,4 +1,5 @@
 /** Shapes shared by the backend, the frontend and the tests. JSON-compatible only. */
+import type { MemeMode } from "./config.ts";
 
 /** Where one caption line is drawn, as fractions of the image (memegen's model). */
 export interface Box {
@@ -91,6 +92,7 @@ export interface GeneratedMeme {
 	lines: string[];
 	values: Record<string, string>;
 	emphasis: Emphasis | null;
+	/** Answer mode: the fact. Hint: the hint. Think: the question to the learner. */
 	fact: string;
 	/** Handle for rating this meme (see rateGenerated in src/reuse.ts). */
 	generatedId?: string;
@@ -98,6 +100,8 @@ export interface GeneratedMeme {
 	reused?: true;
 	/** The learner's stored rating of this generated meme, sent with generate results. */
 	rating?: "up" | "down" | null;
+	/** #17: present only for Hint and Think, so Answer results stay as before. */
+	mode?: Exclude<MemeMode, "answer">;
 }
 
 export interface Settings {
@@ -124,6 +128,8 @@ export interface Settings {
 	webSearch: boolean;
 	/** The search agent to ask (model and provider). Null: no agent, no search. */
 	searchAgent: { provider: string; id: string } | null;
+	/** #17: what the caption does. Answer states the fact (default). */
+	mode: MemeMode;
 }
 
 export interface Usage {

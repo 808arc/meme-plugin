@@ -45,22 +45,6 @@ export const REUSE = Object.freeze({
 	freshFirst: 4,
 });
 
-// #21 own memes
-export const OWN_MEMES = Object.freeze({
-	/** Default of the "Own memes first" setting: chance (%) that a pick comes from
-	 * your own memes while at least one of them is out of cooldown. 100 follows the
-	 * source order strictly: own memes first, the catalogue once every own meme is
-	 * cooling down. Lower values mix the catalogue in. */
-	sharePercent: 100,
-	/** Default of "Minimum cooldown after rejecting" (days). Applies even when the
-	 * normal cooldown is 0, so a rejected meme never comes straight back. */
-	rejectCooldownDays: 1,
-	/** Default custom memes folder. Empty: the plugin's own data/ folder. */
-	folder: "",
-	/** Exports are written here, inside data/: the plugin writes nowhere else. */
-	exportsFolder: "exports",
-});
-
 // #11 web search
 export const WEB_SEARCH = Object.freeze({
 	/** Licences a web meme may carry, normalized (uppercase, dashes, no version).
@@ -76,4 +60,41 @@ export const WEB_SEARCH = Object.freeze({
 	]),
 	/** At most this many prefiltered hits are judged by the model per meme. */
 	maxJudged: 3,
+});
+
+// #17 meme modes
+/** Design: docs/meme-modes.md. */
+export const MEME_MODES = Object.freeze({
+	/** Order shown in settings. Answer must stay first and default. */
+	modes: Object.freeze(["answer", "hint", "think"] as const),
+	defaultMode: "answer" as const,
+	/** Modes allowed to read a question the learner has not revealed yet. */
+	preReveal: Object.freeze(["hint", "think"] as const),
+	/** Longest "answer" the model may name for the no-answer check. */
+	maxAnswerLength: 80,
+	/** Most option labels taken from the question for the no-answer check. */
+	maxOptions: 12,
+	maxOptionLength: 200,
+	labels: Object.freeze({
+		answer: "Answer",
+		hint: "Hint",
+		think: "Think",
+	}),
+});
+export type MemeMode = (typeof MEME_MODES.modes)[number];
+
+// #21 own memes
+export const OWN_MEMES = Object.freeze({
+	/** Default of the "Own memes first" setting: chance (%) that a pick comes from
+	 * your own memes while at least one of them is out of cooldown. 100 follows the
+	 * source order strictly: own memes first, the catalogue once every own meme is
+	 * cooling down. Lower values mix the catalogue in. */
+	sharePercent: 100,
+	/** Default of "Minimum cooldown after rejecting" (days). Applies even when the
+	 * normal cooldown is 0, so a rejected meme never comes straight back. */
+	rejectCooldownDays: 1,
+	/** Default custom memes folder. Empty: the plugin's own data/ folder. */
+	folder: "",
+	/** Exports are written here, inside data/: the plugin writes nowhere else. */
+	exportsFolder: "exports",
 });

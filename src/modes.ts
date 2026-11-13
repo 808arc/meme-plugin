@@ -1,6 +1,11 @@
 /** #17 meme modes: the Hint and Think prompts and the no-answer check. Answer mode
  * keeps using fillRequest in prompts.ts, unchanged. Design: docs/meme-modes.md. */
-import { MEME_MODES, type MemeMode } from "./config.ts";
+import {
+	type ConcreteMode,
+	MEME_MODES,
+	type MemeMode,
+	SHUFFLE_SEQUENCE,
+} from "./config.ts";
 import type { ModelRequest } from "./prompts.ts";
 import {
 	assemble,
@@ -12,7 +17,19 @@ import {
 import type { Concept, Filling, Meme, Template } from "./types.ts";
 
 /** The modes whose caption must not state the answer. */
-export type QuestionMode = Exclude<MemeMode, "answer">;
+export type QuestionMode = Exclude<ConcreteMode, "answer">;
+
+/** #32: the concrete mode for one question. Shuffle follows SHUFFLE_SEQUENCE by the
+ * chat's position (how many memes it has already made in Shuffle); other modes are
+ * returned as they are. */
+export function concreteMode(
+	setting: MemeMode,
+	position: number,
+): ConcreteMode {
+	if (setting !== "shuffle") return setting;
+	const index = Number.isInteger(position) && position >= 0 ? position : 0;
+	return SHUFFLE_SEQUENCE[index % SHUFFLE_SEQUENCE.length]!;
+}
 
 export interface ModeFillInput {
 	meme: Pick<Meme, "name">;

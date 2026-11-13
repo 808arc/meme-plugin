@@ -83,8 +83,8 @@ export const WEB_SEARCH = Object.freeze({
 // #17 meme modes
 /** Design: docs/meme-modes.md. */
 export const MEME_MODES = Object.freeze({
-	/** Order shown in settings. Answer must stay first and default. */
-	modes: Object.freeze(["answer", "hint", "think"] as const),
+	/** Order shown in settings. Answer must stay first and default. Shuffle (#32) is last. */
+	modes: Object.freeze(["answer", "hint", "think", "shuffle"] as const),
 	defaultMode: "answer" as const,
 	/** Modes allowed to read a question the learner has not revealed yet. */
 	preReveal: Object.freeze(["hint", "think"] as const),
@@ -97,9 +97,21 @@ export const MEME_MODES = Object.freeze({
 		answer: "Answer",
 		hint: "Hint",
 		think: "Think",
+		shuffle: "Shuffle",
 	}),
 });
 export type MemeMode = (typeof MEME_MODES.modes)[number];
+/** A mode that actually makes one meme: Shuffle resolves to one of these per question. */
+export type ConcreteMode = Exclude<MemeMode, "shuffle">;
+
+// #32 shuffle mode
+/** Shuffle runs these concrete modes in this order, one per question, then repeats.
+ * The position is kept per chat in memory and reset when the mode setting is saved. */
+export const SHUFFLE_SEQUENCE: readonly ConcreteMode[] = Object.freeze([
+	"answer",
+	"hint",
+	"think",
+]);
 
 // #21 own memes
 export const OWN_MEMES = Object.freeze({

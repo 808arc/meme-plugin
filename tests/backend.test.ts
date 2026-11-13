@@ -11,7 +11,7 @@ import type {
 import { activate, type BackendOptions } from "../src/backend.ts";
 import { BUTTONLESS, FACT_CHECK, TEACHER_TOOL } from "../src/config.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
-import { readRating } from "../src/reuse.ts";
+import { GENERATED_FILE, readRating } from "../src/reuse.ts";
 import { fillRequest, PROMPT_VERSION } from "../src/prompts.ts";
 import { parseTemplate } from "../src/template.ts";
 import type {
@@ -1823,6 +1823,231 @@ test("fix(A): an earlier meme is reused before any web search", async (t) => {
 	const reused = await w.call<GeneratedMeme>("generate", ask);
 	assert.equal(reused.reused, true);
 	assert.equal(w.searches.length, 4, "the reuse made no search");
+});
+
+// #32 shuffle mode
+
+const shuffleReply = (request: PluginInferenceRequest): Reply => {
+	const system = request.context.systemPrompt!;
+	const caption = (fact: string) => ({
+		text: JSON.stringify({
+			values: {
+				achievement: "launched a GPU platform",
+				name: "the GeForce maker's boss",
+			},
+			emphasis: null,
+			answer: "Jensen Huang",
+			fact,
+		}),
+	});
+	if (system.includes("gives a hint"))
+		return caption("Think of who sells GeForce.");
+	if (system.includes("makes the learner think"))
+		return caption("Which panel is true?");
+	return {};
+};
+const choices = ["Jensen Huang", "Lisa Su"];
+
+test("#32 shuffle: the modes run in order, one per question, then repeat", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, cooldownDays: 0, mode: "shuffle" });
+	assert.equal((await call<PluginState>("get-state")).nextMode, "answer");
+	const made: (string | undefined)[] = [];
+	for (let index = 0; index < 6; index++) {
+		const meme = await call<GeneratedMeme>("generate", {
+			prompt: `Question ${index}`,
+			options: choices,
+		});
+		made.push(meme.mode);
+	}
+	assert.deepEqual(made, [
+		"answer",
+		"hint",
+		"think",
+		"answer",
+		"hint",
+		"think",
+	]);
+});
+
+test("#32 shuffle: the sequence position is kept per chat", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, cooldownDays: 0, mode: "shuffle" });
+	const first = await call<GeneratedMeme>("generate", {
+		prompt: "Chat A, one",
+		sessionId: "chat-a",
+	});
+	const other = await call<GeneratedMeme>("generate", {
+		prompt: "Chat B, one",
+		sessionId: "chat-b",
+	});
+	const second = await call<GeneratedMeme>("generate", {
+		prompt: "Chat A, two",
+		sessionId: "chat-a",
+	});
+	assert.equal(first.mode, "answer");
+	assert.equal(other.mode, "answer", "another chat starts at Answer");
+	assert.equal(second.mode, "hint");
+	assert.equal(
+		(await call<PluginState>("get-state", { sessionId: "chat-b" })).nextMode,
+		"hint",
+	);
+});
+
+test("#32 shuffle: saving the mode setting starts the sequence again", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, cooldownDays: 0, mode: "shuffle" });
+	await call("generate", { prompt: "Reset one" });
+	await call("generate", { prompt: "Reset two" });
+	const before = await call<GeneratedMeme>("generate", { prompt: "Reset 3" });
+	assert.equal(before.mode, "think");
+	await call("save-settings", { mode: "shuffle" });
+	const after = await call<GeneratedMeme>("generate", { prompt: "Reset 4" });
+	assert.equal(after.mode, "answer", "back to Answer after the save");
+});
+
+test("#32 shuffle: the reveal rule holds at each step; a refused read does not advance", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, cooldownDays: 0, mode: "shuffle" });
+	// Position 0 is Answer: an early read is refused and the sequence stays put.
+	const requests = f.requests.length;
+	await assert.rejects(
+		call("generate", { prompt: "Early", options: choices, early: true }),
+		/Reveal the question first/,
+	);
+	assert.equal(f.requests.length, requests, "no model call for a refused read");
+	assert.equal((await call<PluginState>("get-state")).nextMode, "answer");
+	// Answer step after reveal.
+	const answer = await call<GeneratedMeme>("generate", { prompt: "Early" });
+	assert.equal(answer.mode, "answer");
+	// Hint and Think may read early; each step reads and hides the answer.
+	const hint = await call<GeneratedMeme>("generate", {
+		prompt: "Early two",
+		options: choices,
+		early: true,
+	});
+	assert.equal(hint.mode, "hint");
+	assert.ok(!JSON.stringify(hint).includes("Jensen"), "hint hides the answer");
+	const think = await call<GeneratedMeme>("generate", {
+		prompt: "Early three",
+		options: choices,
+		early: true,
+	});
+	assert.equal(think.mode, "think");
+	assert.ok(
+		!JSON.stringify(think).includes("Jensen"),
+		"think hides the answer",
+	);
+	// The next step is Answer again: an early read is refused once more.
+	await assert.rejects(
+		call("generate", { prompt: "Early four", early: true }),
+		/Reveal the question first/,
+	);
+});
+
+test("#32 shuffle: the fact check and web search run only on the Answer step", async (t) => {
+	const w = await webFixture(
+		t,
+		[{ ...hit, title: "NVIDIA backed CUDA" }],
+		() => ({ accurate: true }),
+	);
+	await w.call("save-settings", { cooldownDays: 0, mode: "shuffle" });
+	const answer = await w.call<GeneratedMeme>("generate", ask);
+	assert.equal(answer.meme.origin, "web", "the Answer step searches");
+	const hint = await w.call<GeneratedMeme>("generate", ask);
+	const think = await w.call<GeneratedMeme>("generate", ask);
+	assert.equal(hint.mode, "hint");
+	assert.equal(think.mode, "think");
+	assert.notEqual(hint.meme.origin, "web", "no search for Hint");
+	assert.notEqual(think.meme.origin, "web", "no search for Think");
+	assert.equal(w.searches.length, 1, "one search, on the Answer step only");
+});
+
+test("#32 shuffle: the fact check runs once per cycle, on the Answer step", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, cooldownDays: 0, mode: "shuffle" });
+	for (let index = 0; index < 3; index++)
+		await call<GeneratedMeme>("generate", {
+			prompt: `Checked ${index}`,
+			options: choices,
+		});
+	const checks = f.requests.filter((request) =>
+		request.context.systemPrompt!.startsWith("You check one study fact"),
+	);
+	assert.equal(checks.length, 1, "only the Answer meme is checked");
+});
+
+test("#32 shuffle: the reuse key uses the concrete mode of each step", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, cooldownDays: 0, mode: "shuffle" });
+	const steps: GeneratedMeme[] = [];
+	for (let index = 0; index < 3; index++)
+		steps.push(
+			await call<GeneratedMeme>("generate", {
+				prompt: "Who backed CUDA?",
+				options: choices,
+			}),
+		);
+	assert.deepEqual(
+		steps.map((step) => step.mode),
+		["answer", "hint", "think"],
+	);
+	assert.ok(
+		steps.every((step) => step.reused !== true),
+		"the same question in another mode is not reused",
+	);
+	const store = JSON.parse(
+		fs.readFileSync(path.join(f.dataDirectory, GENERATED_FILE), "utf8"),
+	) as { concepts: Record<string, unknown> };
+	const keys = Object.keys(store.concepts);
+	assert.deepEqual(
+		keys.map((key) => key.split(":")[0]).sort(),
+		["answer", "hint", "think"].sort(),
+		"one stored key per concrete mode",
+	);
+});
+
+test("#32 shuffle: teacher and automatic memes stay Answer-only", async (t) => {
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call, registered } = f.start();
+	await call("save-settings", {
+		...offline,
+		cooldownDays: 0,
+		mode: "shuffle",
+		teacherMemes: "teacher",
+		automaticMemes: "every",
+	});
+	const [tool] = registered[0]!.create({
+		chatId: "c",
+		agent: "teacher",
+	}) as Tool[];
+	const made = await tool!.execute("call-1", { prompt: "Teacher question" });
+	assert.equal(
+		made.details.mode,
+		undefined,
+		"the teacher tool makes Answer memes",
+	);
+	assert.match(made.details.fact, /Jensen Huang backed CUDA/);
+	const automatic = await call<{ status: string }>("auto-meme", {
+		key: "chat:1",
+		prompt: "Automatic question",
+	});
+	assert.equal(
+		automatic.status,
+		"off",
+		"no automatic meme while Shuffle is on",
+	);
+	// The teacher tool does not move the learner's Shuffle sequence.
+	const next = await call<GeneratedMeme>("generate", {
+		prompt: "Still answer",
+	});
+	assert.equal(next.mode, "answer");
 });
 
 // #31 tavily search

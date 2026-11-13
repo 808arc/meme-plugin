@@ -244,6 +244,7 @@ function mountSurface(
 				...concept,
 				...extra,
 				requestId,
+				...(view.sessionId ? { sessionId: view.sessionId } : {}),
 				...(result
 					? {
 							[rejecting ? "rejectMemeId" : "excludeMemeId"]: result.meme.id,
@@ -419,7 +420,13 @@ function mountSurface(
 	async function readBeforeReveal() {
 		let mode: MemeMode | undefined;
 		try {
-			mode = (await ctx.call<PluginState>("get-state")).settings.mode;
+			// #32: the mode of this chat's next meme (Shuffle resolves to one).
+			mode = (
+				await ctx.call<PluginState>(
+					"get-state",
+					view.sessionId ? { sessionId: view.sessionId } : undefined,
+				)
+			).nextMode;
 		} catch {
 			return;
 		}
@@ -458,7 +465,7 @@ function settingsRows(
 			key: "mode",
 			label: "Meme mode",
 			description:
-				"Answer states the fact. Hint points at it without saying it. Think asks you to pick before the answer shows. Hint and Think also work before you reveal the question.",
+				"Answer states the fact. Hint points at it without saying it. Think asks you to pick before the answer shows. Shuffle cycles Answer, Hint, Think, one per question; each meme shows its mode. Hint and Think also work before you reveal the question.",
 			value: settings.mode,
 			options: MEME_MODES.modes.map((value) => ({
 				value,

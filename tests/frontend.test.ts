@@ -34,6 +34,7 @@ const generated = (id: string, lines: string[]): GeneratedMeme => ({
 	fact: "Jensen Huang backed CUDA.",
 });
 const state: PluginState = {
+	nextMode: "answer",
 	settings: {
 		model: null,
 		emphasis: true,
@@ -736,7 +737,11 @@ test("Hint mode reads an unrevealed question through the whitelist and keeps it 
 	};
 	const f = fixture(t, (operation) =>
 		operation === "get-state"
-			? { ...state, settings: { ...state.settings, mode: "hint" } }
+			? {
+					...state,
+					nextMode: "hint",
+					settings: { ...state.settings, mode: "hint" },
+				}
 			: operation === "generate"
 				? hinted
 				: null,
@@ -778,6 +783,32 @@ test("Hint mode reads an unrevealed question through the whitelist and keeps it 
 	// Another meme keeps the early flag.
 	await (f.button("Another meme").props.onClick as () => Promise<void>)();
 	assert.equal((f.calls.at(-2)!.input as { early?: boolean }).early, true);
+});
+
+test("#32 shuffle: each meme's label shows the mode it was made in", async (t) => {
+	const made = [
+		{ mode: "answer", fact: "Jensen Huang backed CUDA." },
+		{ mode: "hint", fact: "Think of who sells GeForce." },
+	] as const;
+	let next = 0;
+	const f = fixture(t, (operation) =>
+		operation === "get-state"
+			? {
+					...state,
+					nextMode: "answer",
+					settings: { ...state.settings, mode: "shuffle" },
+				}
+			: operation === "generate"
+				? { ...generated("custom:a", ["x"]), ...made[next++] }
+				: null,
+	);
+	void f.press(question);
+	await settle();
+	const fact = () =>
+		f.surfaces[0]!.container.querySelector(".meme-plugin-fact")!.textContent;
+	assert.equal(fact(), "Answer: Jensen Huang backed CUDA.");
+	await (f.button("Another meme").props.onClick as () => Promise<void>)();
+	assert.equal(fact(), "Hint: Think of who sells GeForce.");
 });
 
 test("Answer mode still refuses an unrevealed question; revealed options travel for the check", async (t) => {

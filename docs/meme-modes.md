@@ -18,7 +18,14 @@ Not yet run in a real LearnHarness host or against a real model.
 | Answer (default) | States the answer. Unchanged. | After reveal only. | The fact. |
 | Hint | Points at the answer: category, first letter, a property, a clue. | Before or after reveal. | The hint as one sentence. |
 | Think | Poses a question or contrast (two claims, one true; "which is the impostor?"). | Before or after reveal. | The question to the learner. |
+| Shuffle (#32) | Runs Answer, Hint, Think in turn: one mode per question, then repeats. | Per question: as that mode. | As that mode; the label names it. |
 | Reflect | Later. Not implemented. | | |
+
+Shuffle: `SHUFFLE_SEQUENCE` in `src/config.ts`. The position is per chat (session id), in memory:
+a reload of the plugin or a save of the Meme mode setting starts again at Answer. A meme counts
+only when it is produced; a refused read (Answer step before reveal) does not advance it. Every
+rule below applies to the mode of that question. Teacher tool and automatic memes stay Answer-only;
+automatic memes are off while Shuffle is on.
 
 Think: the learner commits by answering the host's question. The plugin never shows which claim
 is true.
@@ -43,8 +50,9 @@ Before reveal the surface does not show the question text either. The concept li
    uses its stored mode.
 2. Hidden: show "Reveal the question first" (as today). Ask the backend for the mode. Answer: stop.
    Hint/Think: read the whitelisted fields, send them with `early: true`.
-3. Backend refuses `early: true` unless the stored mode is Hint or Think (settings may change in
-   another window). No model call on refusal.
+3. Backend refuses `early: true` unless the chat's next mode is Hint or Think (settings may change in
+   another window). No model call on refusal. The window asks `nextMode` from the state, so a Shuffle
+   Answer step stays hidden before reveal.
 
 ## Safety checks
 
@@ -64,7 +72,7 @@ rule protects. Facts in Hint/Think still go unchecked until #7.
 
 ## Tunables
 
-`MEME_MODES` in `src/config.ts`.
+`MEME_MODES` and `SHUFFLE_SEQUENCE` in `src/config.ts`.
 
 ## Evidence
 

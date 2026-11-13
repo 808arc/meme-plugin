@@ -31,6 +31,8 @@ export const AUTOMATIC_MEMES: readonly AutomaticMemes[] = Object.freeze([
 	"every",
 	"nth",
 	"wrong",
+	"asked",
+	"asked-nth",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({

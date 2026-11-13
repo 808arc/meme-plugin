@@ -148,8 +148,15 @@ export interface Settings {
 /** off: never. teacher: the teacher decides, within the cap. wrong: only after a wrong answer. */
 export type TeacherMemes = "off" | "teacher" | "wrong";
 
-/** off: never. every: each answered question. nth: every Nth (config). wrong: after a graded wrong answer. */
-export type AutomaticMemes = "off" | "every" | "nth" | "wrong";
+/** off: never. Answer trigger (after the reveal): every, nth (config), wrong (after a graded
+ * wrong answer). Asked trigger (#38, when the question is asked): asked, asked-nth (config). */
+export type AutomaticMemes =
+	| "off"
+	| "every"
+	| "nth"
+	| "wrong"
+	| "asked"
+	| "asked-nth";
 
 /** One answered question, as the frontend saw it in the session history. */
 export interface AutomaticRequest extends Concept {

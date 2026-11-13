@@ -168,3 +168,12 @@ export const TONES = Object.freeze([
 	"playful",
 ] as const);
 export type Tone = (typeof TONES)[number];
+
+// #38 chat-triggered memes
+/** Automatic memes when a question is asked, before the learner answers. They use Hint
+ * or Think only (never Answer), reuse the pre-reveal read rules, and share the daily
+ * budget (`TEACHER_TOOL.automaticMemesPerDay`) with every other automatic meme. */
+export const CHAT_MEMES = Object.freeze({
+	/** "Every Nth question asked": N. */
+	askedNth: 3,
+});

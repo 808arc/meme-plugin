@@ -11,15 +11,16 @@ import type {
 	PluginWidgetHandle,
 } from "learnharness-plugin-api";
 import {
-	type AnsweredQuestion,
 	type ConceptResult,
 	conceptBeforeReveal,
 	conceptFromView,
 	lastAnsweredQuestion,
 	optionLabels,
+	pendingQuestion,
 } from "./concept.ts";
 import {
 	BUTTONLESS,
+	CHAT_MEMES,
 	MEME_MODES,
 	type MemeMode,
 	STAGE_TOPIC,
@@ -586,16 +587,27 @@ function settingsRows(
 			type: "dropdown",
 			key: "automaticMemes",
 			label: "Automatic memes",
-			description: `After you answer a question, a meme opens over the page on its own, folded to one line; Dismiss closes it. Each counts toward the ${TEACHER_TOOL.automaticMemesPerDay} automatic memes a day shared with teacher memes.`,
+			description: `A meme opens over the page on its own, folded to one line; Dismiss closes it. "When a question is asked" uses Hint or Think and never shows the answer. Each counts toward the ${TEACHER_TOOL.automaticMemesPerDay} automatic memes a day shared with teacher memes.`,
 			value: settings.automaticMemes,
 			options: [
 				{ value: "off", label: "Off" },
-				{ value: "every", label: "Every revealed question" },
+				{
+					value: "every",
+					label: "After the answer is revealed: every question",
+				},
 				{
 					value: "nth",
-					label: `Every ${ordinal(BUTTONLESS.everyNth)} revealed question`,
+					label: `After the answer is revealed: every ${ordinal(BUTTONLESS.everyNth)} question`,
 				},
-				{ value: "wrong", label: "Only after wrong answers" },
+				{
+					value: "wrong",
+					label: "After the answer is revealed: only wrong answers",
+				},
+				{ value: "asked", label: "When a question is asked: every question" },
+				{
+					value: "asked-nth",
+					label: `When a question is asked: every ${ordinal(CHAT_MEMES.askedNth)} question`,
+				},
 			],
 			onChange: (value) =>
 				save({ automaticMemes: value as Settings["automaticMemes"] }),
@@ -951,16 +963,12 @@ export function activate(ctx: PluginFrontendContext): void {
 	};
 	const deliver = async (
 		target: PluginSurfaceTarget,
-		answered: AnsweredQuestion,
+		request: Record<string, unknown>,
 		view: PluginSessionViewContext,
 	) => {
 		let result: AutomaticResult;
 		try {
-			result = await ctx.call<AutomaticResult>("auto-meme", {
-				key: answered.key,
-				...answered.concept,
-				wrong: answered.wrong,
-			});
+			result = await ctx.call<AutomaticResult>("auto-meme", request);
 		} catch {
 			return; // Automatic: a failure stays quiet; Meme this still works.
 		}
@@ -991,6 +999,32 @@ export function activate(ctx: PluginFrontendContext): void {
 		if (automatic === null) return loadAutomatic();
 		if (automatic === "off") return;
 		const view = context.view;
+		const target = context.surfaceTarget;
+		// #38: when a question is asked. Hint or Think only, from the pre-reveal read.
+		if (automatic === "asked" || automatic === "asked-nth") {
+			const pending = pendingQuestion(view);
+			if (!pending || handled.has(pending.key)) return;
+			handled.add(pending.key);
+			if (open) return;
+			const { prompt, context: extra } = pending.early.concept;
+			queueMicrotask(
+				() =>
+					void deliver(
+						target,
+						{
+							key: pending.key,
+							asked: true,
+							prompt,
+							...(extra !== undefined ? { context: extra } : {}),
+							...(pending.early.options.length
+								? { options: pending.early.options }
+								: {}),
+						},
+						view,
+					),
+			);
+			return;
+		}
 		// Same reveal rule as Meme this: nothing while an unrevealed question is on screen.
 		if (conceptFromView(view).status === "hidden") return;
 		const answered = lastAnsweredQuestion(view);
@@ -1004,8 +1038,14 @@ export function activate(ctx: PluginFrontendContext): void {
 		handled.add(answered.key);
 		// A meme is already open: the learner has one; this question is done.
 		if (open) return;
-		const target = context.surfaceTarget;
-		queueMicrotask(() => void deliver(target, answered, context.view));
+		queueMicrotask(
+			() =>
+				void deliver(
+					target,
+					{ key: answered.key, ...answered.concept, wrong: answered.wrong },
+					context.view,
+				),
+		);
 	};
 	ctx.onAppEvent((event) => {
 		if (

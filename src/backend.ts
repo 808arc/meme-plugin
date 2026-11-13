@@ -11,6 +11,7 @@ import type {
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
 import {
 	BUTTONLESS,
+	CHAT_MEMES,
 	type ConcreteMode,
 	FACT_CHECK,
 	MEME_MODES,
@@ -83,6 +84,7 @@ import { applySettingsPatch, readSettings } from "./settings.ts";
 import { type Fetch, searchAgentFor, tavilyKey } from "./tavily.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
+	AutomaticMemes,
 	AutomaticResult,
 	Concept,
 	Filling,
@@ -114,6 +116,21 @@ const TEACHER_INSTRUCTIONS: Record<Exclude<TeacherMemes, "off">, string> = {
 /** Local calendar day, for the automatic-meme budget. */
 const dayKey = (now: number) => new Date(now).toLocaleDateString("en-CA");
 
+/** #38: which moment an automatic setting reacts to; null when off. */
+const automaticTrigger = (
+	setting: AutomaticMemes,
+): "reveal" | "asked" | null =>
+	setting === "off"
+		? null
+		: setting === "asked" || setting === "asked-nth"
+			? "asked"
+			: "reveal";
+
+/** #38: the mode of an asked-question meme. Hint, or Think when Think is the setting.
+ * Never Answer: it would state the answer before the learner has tried. */
+const askedMode = (mode: MemeMode): ConcreteMode =>
+	mode === "think" ? "think" : "hint";
+
 interface CachedTemplate extends Template {
 	captionHash: string;
 	promptVersion: number;
@@ -125,8 +142,9 @@ interface Stored {
 	templates: Record<string, CachedTemplate>;
 	/** Automatic memes made today; the shared budget in config.ts. */
 	automatic: { day: string; count: number };
-	/** #18: questions that already had their automatic turn, and how many were answered. */
-	buttonless: { seen: string[]; revealed: number };
+	/** #18: questions that already had their automatic turn, and how many were answered.
+	 * #38: how many questions were asked (asked trigger). */
+	buttonless: { seen: string[]; revealed: number; asked: number };
 }
 
 /** The model answered, but not with something the plugin can accept. */
@@ -159,7 +177,7 @@ function readState(file: string): Stored {
 				usage: {},
 				templates: {},
 				automatic: { day: "", count: 0 },
-				buttonless: { seen: [], revealed: 0 },
+				buttonless: { seen: [], revealed: 0, asked: 0 },
 			};
 		throw new Error(
 			`Meme plugin could not read ${STATE_FILE}: ${(error as Error).message}`,
@@ -217,6 +235,12 @@ function readButtonless(value: unknown): Stored["buttonless"] {
 			Number.isInteger(revealed) &&
 			revealed >= 0
 				? revealed
+				: 0,
+		asked:
+			typeof item?.asked === "number" &&
+			Number.isInteger(item.asked) &&
+			item.asked >= 0
+				? item.asked
 				: 0,
 	};
 }
@@ -1021,21 +1045,27 @@ export function activate(
 				throw new Error("Unknown meme.");
 			return null;
 		}),
-		// #18: the frontend saw an answered question; the backend decides whether it gets a meme.
+		// #18/#38: the frontend saw an answered question (reveal trigger) or a question
+		// asked but not revealed yet (asked trigger); the backend decides whether it gets a meme.
 		ctx.handle("auto-meme", async (input): Promise<AutomaticResult> => {
 			alive();
 			const value = object(input);
 			const key = typeof value.key === "string" ? value.key : "";
 			if (!key || key.length > 1000)
 				throw new Error("An automatic meme needs a question key.");
-			const frequency = state.settings.automaticMemes;
-			// #17: an automatic meme states the answer, so it runs in Answer mode only.
-			// #32: Shuffle is not Answer, so it gets no automatic memes either.
-			if (frequency === "off" || state.settings.mode !== "answer")
+			const setting = state.settings.automaticMemes;
+			const asked = value.asked === true;
+			// Only the setting's own trigger counts; the other one is off.
+			if (automaticTrigger(setting) !== (asked ? "asked" : "reveal"))
 				return { status: "off" };
+			// #17: a reveal meme states the answer, so it runs in Answer mode only.
+			// #32: Shuffle is not Answer, so it gets no reveal memes either.
+			if (!asked && state.settings.mode !== "answer") return { status: "off" };
+			// One automatic meme per question, whichever trigger made it.
 			if (state.buttonless.seen.includes(key)) return { status: "seen" };
 			// Marked before any model call: a failed or skipped question is never retried.
-			const revealed = state.buttonless.revealed + 1;
+			const revealed = state.buttonless.revealed + (asked ? 0 : 1);
+			const askedCount = state.buttonless.asked + (asked ? 1 : 0);
 			save({
 				...state,
 				buttonless: {
@@ -1043,24 +1073,45 @@ export function activate(
 						-BUTTONLESS.rememberedQuestions,
 					),
 					revealed,
+					asked: askedCount,
 				},
 			});
+			const counted = asked ? askedCount : revealed;
+			const every = asked ? CHAT_MEMES.askedNth : BUTTONLESS.everyNth;
 			if (
-				(frequency === "nth" && revealed % BUTTONLESS.everyNth !== 0) ||
-				(frequency === "wrong" && value.wrong !== true)
+				((setting === "nth" || setting === "asked-nth") &&
+					counted % every !== 0) ||
+				(setting === "wrong" && value.wrong !== true)
 			)
 				return { status: "skipped" };
 			if (!budgetLeft()) return { status: "budget" };
 			// Not asked for by the learner: background work, like the teacher tool.
 			const meme = await guarded(() =>
-				generate(
-					{
-						prompt: value.prompt,
-						...(value.context !== undefined ? { context: value.context } : {}),
-					},
-					"background",
-					"answer",
-				),
+				asked
+					? generate(
+							{
+								prompt: value.prompt,
+								...(value.context !== undefined
+									? { context: value.context }
+									: {}),
+								early: true,
+								...(value.options !== undefined
+									? { options: value.options }
+									: {}),
+							},
+							"background",
+							askedMode(state.settings.mode),
+						)
+					: generate(
+							{
+								prompt: value.prompt,
+								...(value.context !== undefined
+									? { context: value.context }
+									: {}),
+							},
+							"background",
+							"answer",
+						),
 			);
 			spendAutomatic();
 			return { status: "meme", meme };

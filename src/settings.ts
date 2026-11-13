@@ -1,7 +1,18 @@
 /** Settings defaults and validation, shared by the backend (authority) and the
  * settings page (inline validation). */
 import { MEME_MODES, type MemeMode, OWN_MEMES } from "./config.ts";
-import type { AutomaticMemes, Settings, TeacherMemes } from "./types.ts";
+import type {
+	AutomaticMemes,
+	SearchProvider,
+	Settings,
+	TeacherMemes,
+} from "./types.ts";
+
+/** #31: search providers, default first. */
+export const SEARCH_PROVIDERS: readonly SearchProvider[] = Object.freeze([
+	"none",
+	"tavily",
+]);
 
 export const TEACHER_MEMES: readonly TeacherMemes[] = Object.freeze([
 	"off",
@@ -28,6 +39,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	customFolder: OWN_MEMES.folder,
 	webSearch: true,
 	searchAgent: null,
+	searchProvider: "none",
 	mode: MEME_MODES.defaultMode,
 	teacherMemes: "off",
 	automaticMemes: "off",
@@ -125,6 +137,13 @@ export function applySettingsPatch(
 				next.searchAgent = { provider: agent.provider, id: agent.id };
 				break;
 			}
+			case "searchProvider":
+				if (!SEARCH_PROVIDERS.includes(value as SearchProvider))
+					throw new Error(
+						`searchProvider must be one of ${SEARCH_PROVIDERS.join(", ")}`,
+					);
+				next.searchProvider = value as SearchProvider;
+				break;
 			case "emphasis":
 			case "useMemegen":
 			case "webSearch":

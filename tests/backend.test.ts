@@ -634,7 +634,9 @@ test("the custom library skips bad entries and says why", (t) => {
 });
 
 test("the bundled catalogue is well formed", () => {
-	const memes = memegenMemes("https://api.memegen.link");
+	const memes = memegenMemes("https://api.memegen.link", {
+		includeHidden: true,
+	});
 	assert.ok(memes.length > 150);
 	assert.equal(new Set(memes.map((meme) => meme.id)).size, memes.length);
 	for (const meme of memes) {

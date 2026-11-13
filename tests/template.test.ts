@@ -225,6 +225,26 @@ test("JSON is found inside fences and prose", () => {
 	assert.throws(() => extractJson("no object here"), /JSON object/);
 });
 
+test("the humor rule favours exaggeration and a last-line punchline; accuracy rules stay", () => {
+	const template = parseTemplate(proposal, caption);
+	const { systemPrompt } = fillRequest({
+		meme: { name: "Proud speech" },
+		template,
+		concept: { prompt: "Who backed CUDA?" },
+		emphasis: false,
+	});
+	assert.match(systemPrompt, /exaggeration and absurdity, not puns/);
+	assert.match(systemPrompt, /punchline in the last numbered sentence/);
+	assert.match(
+		systemPrompt,
+		/- The filled caption must state true facts that answer the learner's question\. Never invent names, dates or numbers\. Prefer the single most important fact\./,
+	);
+	assert.match(
+		systemPrompt,
+		/- A joke must never need a claim that is false or unsupported by the fact; when it would, state the plain fact instead\./,
+	);
+});
+
 test("requests carry the question, the template and the emphasis switch", () => {
 	const template = parseTemplate(proposal, caption);
 	const meme = { name: "Proud speech", caption };

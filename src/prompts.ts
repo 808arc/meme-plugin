@@ -8,7 +8,7 @@ import {
 } from "./template.ts";
 import type { Concept, Meme, Template } from "./types.ts";
 
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 export interface ModelRequest {
 	systemPrompt: string;
@@ -81,7 +81,8 @@ export function fillRequest(input: {
 			"You are given a meme template with slots. Fill every slot.",
 			"Rules:",
 			"- The filled caption must state true facts that answer the learner's question. Never invent names, dates or numbers. Prefer the single most important fact.",
-			"- Make it funny the way the meme is funny: a setup and punchline, a contrast, or an exaggeration of the fact. A joke must never need a claim that is false or unsupported by the fact; when it would, state the plain fact instead.",
+			"- Make it funny with exaggeration and absurdity, not puns or wordplay: push the true fact to a vivid, absurd extreme the meme's character would relish. Use one surprise per caption, and put the punchline in the last numbered sentence.",
+			"- A joke must never need a claim that is false or unsupported by the fact; when it would, state the plain fact instead.",
 			`- Each value is a short phrase (at most ${MAX_VALUE_LENGTH} characters) that reads grammatically inside its sentence. Plain text only.`,
 			"- Do not rewrite the fixed words of the template; you only supply slot values.",
 			emphasis,

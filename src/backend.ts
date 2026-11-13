@@ -25,6 +25,17 @@ import {
 	pickRequest,
 	templateRequest,
 } from "./prompts.ts";
+import {
+	chooseReuse,
+	conceptKey,
+	mayReuse,
+	newEntry,
+	readGenerated,
+	recordFresh,
+	recordReuse,
+	type StoredMeme,
+	writeGenerated,
+} from "./reuse.ts";
 import { coolingDown, pickMeme, recordUse, shortlist } from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
@@ -361,6 +372,16 @@ export function activate(ctx: PluginBackendContext): () => void {
 		}
 	}
 
+	/** "Once used, store it": start or extend the meme's cooldown. */
+	const markUsed = (id: string) =>
+		save({
+			...state,
+			usage: {
+				...state.usage,
+				[id]: recordUse(state.usage[id], Date.now(), state.settings),
+			},
+		});
+
 	async function generate(input: unknown): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
@@ -383,8 +404,30 @@ export function activate(ctx: PluginBackendContext): () => void {
 		const exclude =
 			typeof value.excludeMemeId === "string" ? value.excludeMemeId : undefined;
 
-		const model = await resolveModel();
 		const memes = pool().memes;
+		// Before any model is needed: an earlier meme for this concept, if this
+		// concept's reuse share allows. A reuse counts as a use for the cooldown.
+		const key = conceptKey(prompt);
+		const store = readGenerated(ctx.dataDirectory);
+		const earlier = mayReuse(store.concepts[key])
+			? chooseReuse(
+					store.concepts[key]?.memes ?? [],
+					new Set(memes.map((meme) => meme.id)),
+					exclude,
+				)
+			: undefined;
+		if (earlier) {
+			markUsed(earlier.meme.meme.id);
+			writeGenerated(ctx.dataDirectory, recordReuse(store, key));
+			return {
+				...earlier.meme,
+				concept,
+				generatedId: earlier.id,
+				reused: true,
+			};
+		}
+
+		const model = await resolveModel();
 		if (!memes.length)
 			throw new Error(
 				"The meme pool is empty. Enable the bundled catalogue or add custom memes.",
@@ -421,18 +464,8 @@ export function activate(ctx: PluginBackendContext): () => void {
 			const filling = await fillChecked(model, meme, template, concept);
 			const emphasis = state.settings.emphasis ? filling.emphasis : null;
 			// "Once used, store it": only a meme that was actually produced starts its cooldown.
-			save({
-				...state,
-				usage: {
-					...state.usage,
-					[meme.id]: recordUse(
-						state.usage[meme.id],
-						Date.now(),
-						state.settings,
-					),
-				},
-			});
-			return {
+			markUsed(meme.id);
+			const stored: StoredMeme = {
 				meme: {
 					id: meme.id,
 					origin: meme.origin,
@@ -441,7 +474,6 @@ export function activate(ctx: PluginBackendContext): () => void {
 					boxes: meme.boxes,
 					hasImage: !!meme.image,
 				},
-				concept,
 				originalCaption: meme.caption,
 				templateLines: template.lines,
 				lines: assemble(template, filling.values, emphasis),
@@ -449,6 +481,13 @@ export function activate(ctx: PluginBackendContext): () => void {
 				emphasis,
 				fact: filling.fact,
 			};
+			const entry = newEntry(stored, Date.now());
+			// Re-read: a rating may have been written while the model was answering.
+			writeGenerated(
+				ctx.dataDirectory,
+				recordFresh(readGenerated(ctx.dataDirectory), key, entry),
+			);
+			return { ...stored, concept, generatedId: entry.id };
 		}
 		throw failure instanceof Error
 			? failure

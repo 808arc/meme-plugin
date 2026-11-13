@@ -87,6 +87,10 @@ export interface GeneratedMeme {
 	values: Record<string, string>;
 	emphasis: Emphasis | null;
 	fact: string;
+	/** Handle for rating this meme (see rateGenerated in src/reuse.ts). */
+	generatedId?: string;
+	/** Set when an earlier meme for the same concept was reused instead of generated. */
+	reused?: true;
 }
 
 export interface Settings {

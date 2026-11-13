@@ -88,6 +88,8 @@ replaces only the installed `dist/`.
 | Cooldown growth | 2 | Each further use of the same meme multiplies its cooldown: 14, 28, 56 … days, at most a year. |
 | Use the bundled catalogue | on | About 200 image memes from [memegen](https://github.com/jacebrowning/memegen). |
 | Image server | `https://api.memegen.link` | Where blank images come from. A self-hosted memegen works too. Empty: captions only. |
+| Search the web for memes | on | Before generating, look for an existing meme through the search agent. Off: local sources and generation only. |
+| Search agent | none | The model and provider that search uses. Without one, no search runs. |
 
 **Reset cooldowns** makes every meme eligible again.
 

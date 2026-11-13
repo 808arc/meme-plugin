@@ -9,6 +9,8 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	cooldownGrowth: 2,
 	useMemegen: true,
 	imageBaseUrl: "https://api.memegen.link",
+	webSearch: true,
+	searchAgent: null,
 });
 
 export const LIMITS = Object.freeze({
@@ -72,8 +74,27 @@ export function applySettingsPatch(
 				next.model = { provider: model.provider, id: model.id };
 				break;
 			}
+			case "searchAgent": {
+				if (value === null) {
+					next.searchAgent = null;
+					break;
+				}
+				const agent = value as { provider?: unknown; id?: unknown } | undefined;
+				if (
+					!agent ||
+					typeof agent !== "object" ||
+					typeof agent.provider !== "string" ||
+					!agent.provider ||
+					typeof agent.id !== "string" ||
+					!agent.id
+				)
+					throw new Error("searchAgent must be {provider, id} or null");
+				next.searchAgent = { provider: agent.provider, id: agent.id };
+				break;
+			}
 			case "emphasis":
 			case "useMemegen":
+			case "webSearch":
 				if (typeof value !== "boolean")
 					throw new Error(`${key} must be true or false`);
 				next[key] = value;

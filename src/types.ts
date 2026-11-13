@@ -17,10 +17,12 @@ export interface Box {
 export interface Meme {
 	/** Unique across origins: `memegen:<id>` or `custom:<id>`. */
 	id: string;
-	origin: "memegen" | "custom";
+	origin: "memegen" | "custom" | "web";
 	name: string;
 	/** Background link (e.g. Know Your Meme), shown as attribution. */
 	source?: string;
+	/** Who made or hosts the image, shown with the meme. Required for web memes. */
+	credit?: string;
 	/** Absolute http(s) URL, or a file name inside `data/custom-images/`. Empty: text only. */
 	image: string;
 	/** The meme's original text, one entry per box. */
@@ -67,7 +69,7 @@ export interface Concept {
 
 /** What the backend returns for one generated meme. */
 export interface GeneratedMeme {
-	meme: Pick<Meme, "id" | "origin" | "name" | "source" | "boxes"> & {
+	meme: Pick<Meme, "id" | "origin" | "name" | "source" | "credit" | "boxes"> & {
 		hasImage: boolean;
 	};
 	concept: Concept;
@@ -93,6 +95,10 @@ export interface Settings {
 	useMemegen: boolean;
 	/** Where blank memegen images come from. Empty: never fetch, show text only. */
 	imageBaseUrl: string;
+	/** Search the web for an existing meme before generating. */
+	webSearch: boolean;
+	/** The search agent to ask (model and provider). Null: no agent, no search. */
+	searchAgent: { provider: string; id: string } | null;
 }
 
 export interface Usage {

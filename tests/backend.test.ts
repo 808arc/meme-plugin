@@ -8,7 +8,7 @@ import type {
 	PluginBackendContext,
 	PluginInferenceRequest,
 } from "learnharness-plugin-api";
-import { activate } from "../src/backend.ts";
+import { type BackendOptions, activate } from "../src/backend.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
 import type { GeneratedMeme, MemeImage, PluginState } from "../src/types.ts";
 
@@ -97,7 +97,7 @@ function fixture(
 	const requests: PluginInferenceRequest[] = [];
 	const memeOf = (request: PluginInferenceRequest) =>
 		/^Meme: (.+)$/m.exec(String(request.context.messages[0]!.content))![1]!;
-	const start = () => {
+	const start = (backend: BackendOptions = {}) => {
 		const controller = new AbortController();
 		const handlers = new Map<string, (input: unknown) => unknown>();
 		const ctx = {
@@ -162,7 +162,7 @@ function fixture(
 				},
 			},
 		} as unknown as PluginBackendContext;
-		const dispose = activate(ctx);
+		const dispose = activate(ctx, backend);
 		const call = async <T>(name: string, input?: unknown): Promise<T> => {
 			const handler = handlers.get(name);
 			if (!handler) throw new Error(`No handler: ${name}`);
@@ -422,6 +422,8 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 		cooldownGrowth: 2,
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
+		webSearch: true,
+		searchAgent: null,
 	});
 	assert.equal(initial.pool.memegen, memegenMemes("").length);
 	assert.equal(initial.pool.custom, 2);
@@ -650,4 +652,75 @@ test("the bundled catalogue is well formed", () => {
 				assert.ok(value >= 0 && value <= 1);
 	}
 	assert.ok(memegenMemes("").every((meme) => meme.image === ""));
+});
+
+const hit = {
+	image: "https://images.example.test/drake.jpg",
+	name: "Drake approving",
+	terms: ["cuda"],
+	source: "https://memes.example.test/drake",
+	credit: "Example Archive",
+	license: "CC-BY-4.0",
+};
+const webSearch = (hits: unknown[]) => ({
+	createSearchAgent: () => ({
+		find: async () => hits as never,
+	}),
+});
+
+test("web search: an acceptable hit is shown with credit and source, without generating", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const { call } = f.start(webSearch([hit]));
+	await call("save-settings", { useMemegen: false, searchAgent: other });
+	const found = await call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	assert.equal(found.meme.origin, "web");
+	assert.equal(found.meme.credit, "Example Archive");
+	assert.equal(found.meme.source, "https://memes.example.test/drake");
+	assert.deepEqual(found.lines, []);
+	assert.equal(f.requests.length, 0, "no model call when a web meme is found");
+});
+
+test("web search: off, unconfigured, or nothing relevant falls back to generation", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const off = f.start(webSearch([hit]));
+	await off.call("save-settings", {
+		useMemegen: false,
+		searchAgent: other,
+		webSearch: false,
+	});
+	const generated = await off.call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	assert.equal(generated.meme.origin, "custom");
+
+	const unrelated = f.start(
+		webSearch([
+			{ ...hit, terms: ["weather"] },
+			{ ...hit, license: "" },
+		]),
+	);
+	await unrelated.call("save-settings", {
+		useMemegen: false,
+		searchAgent: other,
+	});
+	const after = await unrelated.call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	assert.equal(after.meme.origin, "custom");
+});
+
+test("web search settings: the agent is configured by the learner, not hardcoded", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const { call } = f.start();
+	const state = await call<PluginState>("save-settings", {
+		searchAgent: other,
+	});
+	assert.deepEqual(state.settings.searchAgent, other);
+	assert.equal(state.settings.webSearch, true, "on by default");
+	await assert.rejects(
+		call("save-settings", { searchAgent: { provider: "", id: "x" } }),
+		/searchAgent must be/,
+	);
 });

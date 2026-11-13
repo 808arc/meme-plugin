@@ -19,6 +19,7 @@ import {
 } from "./prompts.ts";
 import { coolingDown, pickMeme, recordUse } from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
+import { findWebMeme, type SearchAgent } from "./search.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
 	Concept,
@@ -111,13 +112,24 @@ function readState(file: string): Stored {
 	};
 }
 
-export function activate(ctx: PluginBackendContext): () => void {
+export interface BackendOptions {
+	/** Builds the search agent from the learner's settings. Without one, web search
+	 * is skipped and the plugin generates. The host supplies the provider. */
+	createSearchAgent?: (settings: Settings) => SearchAgent | null;
+}
+
+export function activate(
+	ctx: PluginBackendContext,
+	options: BackendOptions = {},
+): () => void {
 	const file = path.join(ctx.dataDirectory, STATE_FILE);
 	let state = readState(file);
 	let disposed = false;
 	let generating = false;
 	/** Memes the current model could not template; not retried until the next activation. */
 	const unusable = new Set<string>();
+	/** The web meme shown last; its image is served by `get-image`. */
+	const webFound = new Map<string, Meme>();
 
 	const alive = () => {
 		if (disposed || ctx.signal.aborted)
@@ -277,6 +289,40 @@ export function activate(ctx: PluginBackendContext): () => void {
 		return template;
 	}
 
+	/** Web search, when on and an agent is configured. Null means: generate instead. */
+	async function webResult(
+		concept: Concept,
+		exclude: string | undefined,
+	): Promise<GeneratedMeme | null> {
+		const { webSearch, searchAgent } = state.settings;
+		if (!webSearch || !searchAgent) return null;
+		const agent = options.createSearchAgent?.(state.settings);
+		if (!agent) return null;
+		const meme = await findWebMeme(agent, concept, ctx.signal);
+		alive();
+		if (!meme || meme.id === exclude) return null;
+		webFound.clear();
+		webFound.set(meme.id, meme);
+		return {
+			meme: {
+				id: meme.id,
+				origin: "web",
+				name: meme.name,
+				source: meme.source,
+				credit: meme.credit,
+				boxes: [],
+				hasImage: true,
+			},
+			concept,
+			originalCaption: [],
+			templateLines: [],
+			lines: [],
+			values: {},
+			emphasis: null,
+			fact: "",
+		};
+	}
+
 	async function generate(input: unknown): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
@@ -296,6 +342,10 @@ export function activate(ctx: PluginBackendContext): () => void {
 		};
 		const exclude =
 			typeof value.excludeMemeId === "string" ? value.excludeMemeId : undefined;
+
+		// Source 4 of the README: an existing meme found on the web beats generating one.
+		const web = await webResult(concept, exclude);
+		if (web) return web;
 
 		const model = await resolveModel();
 		const memes = pool().memes;
@@ -408,7 +458,8 @@ export function activate(ctx: PluginBackendContext): () => void {
 			const id = object(input).id;
 			const meme =
 				typeof id === "string"
-					? pool().memes.find((candidate) => candidate.id === id)
+					? (pool().memes.find((candidate) => candidate.id === id) ??
+						webFound.get(id))
 					: undefined;
 			if (!meme) throw new Error("Unknown meme.");
 			const image = await loadImage(meme, ctx.dataDirectory, ctx.signal);

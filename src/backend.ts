@@ -648,7 +648,9 @@ export function activate(
 		}
 
 		// Source 4 of the README: an existing meme found on the web beats generating one.
-		const web = await webResult(purpose, concept, exclude);
+		// Hint and Think never show a web meme: its text would state the answer.
+		const web =
+			mode === "answer" ? await webResult(purpose, concept, exclude) : null;
 		if (web) return web;
 
 		const model = await resolveModel();

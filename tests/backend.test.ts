@@ -1163,6 +1163,20 @@ async function webFixture(
 	const f = fixture(t, {
 		memes: [custom[0]],
 		reply: (request) => {
+			// Hint and Think captions (#17) for the single meme the web fixture offers.
+			if (
+				/gives a hint|makes the learner think/.test(
+					request.context.systemPrompt!,
+				)
+			)
+				return {
+					text: JSON.stringify({
+						values: { achievement: "led a platform", name: "the boss" },
+						emphasis: null,
+						answer: "Jensen Huang",
+						fact: "Think of the company's founder.",
+					}),
+				};
 			if (!request.context.systemPrompt!.startsWith("You judge")) return {};
 			const answer = judge(String(request.context.messages[0]!.content));
 			if (answer === "error")
@@ -1705,4 +1719,26 @@ test("fix(B): the fact check runs only in Answer mode", async (t) => {
 		1,
 		"Answer mode runs the check",
 	);
+});
+
+test("fix(D): web search is skipped in Hint and Think modes", async (t) => {
+	const w = await webFixture(
+		t,
+		[{ ...hit, title: "NVIDIA backed CUDA" }],
+		() => ({
+			accurate: true,
+		}),
+	);
+	await w.call("save-settings", { mode: "hint" });
+	const hinted = await w.call<GeneratedMeme>("generate", ask);
+	assert.notEqual(hinted.meme.origin, "web");
+	await w.call("save-settings", { mode: "think" });
+	const thought = await w.call<GeneratedMeme>("generate", ask);
+	assert.notEqual(thought.meme.origin, "web");
+	assert.equal(w.searches.length, 0, "no search agent is asked");
+	assert.equal(w.judged(), 0, "no judge call");
+	await w.call("save-settings", { mode: "answer" });
+	const answered = await w.call<GeneratedMeme>("generate", ask);
+	assert.equal(answered.meme.origin, "web", "Answer mode still searches");
+	assert.equal(w.searches.length, 1);
 });

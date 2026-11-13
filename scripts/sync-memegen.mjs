@@ -26,8 +26,16 @@ const number = (value, fallback) =>
 	typeof value === "number" && Number.isFinite(value) ? value : fallback;
 const clamp = (value) => Math.min(1, Math.max(0, value));
 
+// Tags are hand-made (src/catalogue-tags.ts), so keep the ones already in the file by id.
+const output = path.join(root, "src", "data", "memegen-templates.json");
+const previousTags = new Map();
+if (fs.existsSync(output)) {
+	for (const previous of JSON.parse(fs.readFileSync(output, "utf8")).templates)
+		if (previous.tags) previousTags.set(previous.id, previous.tags);
+}
 const templates = [];
 const skipped = [];
+let untagged = 0;
 for (const id of fs.readdirSync(templatesDirectory).sort()) {
 	// Underscore folders are memegen's own error/test fixtures.
 	if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
@@ -72,6 +80,8 @@ for (const id of fs.readdirSync(templatesDirectory).sort()) {
 				: "center",
 		};
 	});
+	const tags = previousTags.get(id);
+	if (!tags) untagged++;
 	templates.push({
 		id,
 		name:
@@ -83,6 +93,7 @@ for (const id of fs.readdirSync(templatesDirectory).sort()) {
 			: {}),
 		caption,
 		boxes,
+		...(tags ? { tags } : {}),
 	});
 }
 
@@ -96,7 +107,6 @@ try {
 } catch {
 	/* not a git checkout */
 }
-const output = path.join(root, "src", "data", "memegen-templates.json");
 fs.writeFileSync(
 	output,
 	JSON.stringify(
@@ -111,6 +121,10 @@ fs.writeFileSync(
 	) + "\n",
 );
 console.log(`[sync-memegen] ${templates.length} templates -> ${output}`);
+if (untagged)
+	console.log(
+		`[sync-memegen] ${untagged} untagged (new) templates: they stay in the pool until tagged`,
+	);
 if (skipped.length)
 	console.log(
 		`[sync-memegen] skipped ${skipped.length}: ${skipped.join("; ")}`,

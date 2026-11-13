@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import catalogue from "./data/memegen-templates.json" with { type: "json" };
+import { hiddenByDefault, type TemplateTags } from "./catalogue-tags.ts";
 import type { Box, Meme } from "./types.ts";
 
 export const CUSTOM_FILE = "custom-memes.json";
@@ -39,16 +40,26 @@ export function defaultBoxes(count: number): Box[] {
 	}));
 }
 
-export function memegenMemes(imageBaseUrl: string): Meme[] {
-	return catalogue.templates.map((template) => ({
-		id: `memegen:${template.id}`,
-		origin: "memegen" as const,
-		name: template.name,
-		...(template.source ? { source: template.source } : {}),
-		image: imageBaseUrl ? `${imageBaseUrl}/images/${template.id}.jpg` : "",
-		caption: template.caption,
-		boxes: template.boxes as Box[],
-	}));
+/** Dated or weak templates are left out unless `includeHidden` is set. */
+export function memegenMemes(
+	imageBaseUrl: string,
+	{ includeHidden = false }: { includeHidden?: boolean } = {},
+): Meme[] {
+	return catalogue.templates
+		.filter(
+			(template) =>
+				includeHidden ||
+				!hiddenByDefault(template.tags as TemplateTags | undefined),
+		)
+		.map((template) => ({
+			id: `memegen:${template.id}`,
+			origin: "memegen" as const,
+			name: template.name,
+			...(template.source ? { source: template.source } : {}),
+			image: imageBaseUrl ? `${imageBaseUrl}/images/${template.id}.jpg` : "",
+			caption: template.caption,
+			boxes: template.boxes as Box[],
+		}));
 }
 
 const fraction = (value: unknown, fallback: number) =>

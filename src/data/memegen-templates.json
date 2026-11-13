@@ -46,7 +46,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "aag",
@@ -79,7 +86,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ackbar",
@@ -112,7 +126,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "afraid",
@@ -145,7 +166,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "agnes",
@@ -178,7 +206,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "aint-got-time",
@@ -211,7 +246,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ams",
@@ -244,7 +286,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ants",
@@ -277,7 +326,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "apcr",
@@ -310,7 +366,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "astronaut",
@@ -367,7 +430,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "atis",
@@ -400,7 +470,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "away",
@@ -433,7 +510,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "awesome",
@@ -466,7 +550,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "awesome-awkward",
@@ -499,7 +590,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "awkward",
@@ -532,7 +630,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "awkward-awesome",
@@ -565,7 +670,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "bad",
@@ -598,7 +710,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "badchoice",
@@ -631,7 +750,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "balloon",
@@ -676,7 +802,14 @@
 					"font": "comic",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "self-deprecating",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "bd",
@@ -709,7 +842,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "because",
@@ -742,7 +882,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "bender",
@@ -775,7 +922,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "bihw",
@@ -808,7 +962,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sincere",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "bilbo",
@@ -841,7 +1002,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "biw",
@@ -874,7 +1042,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "blb",
@@ -907,7 +1082,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "boat",
@@ -940,7 +1122,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "bongo",
@@ -973,7 +1162,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "both",
@@ -1006,7 +1202,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "box",
@@ -1039,7 +1242,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "bs",
@@ -1072,7 +1282,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "bus",
@@ -1105,7 +1322,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "buzz",
@@ -1138,7 +1362,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "cake",
@@ -1171,7 +1402,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "captain",
@@ -1204,7 +1442,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "captain-america",
@@ -1249,7 +1494,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "playful",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "cb",
@@ -1282,7 +1534,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sincere",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "cbb",
@@ -1315,7 +1574,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "cbg",
@@ -1348,7 +1614,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "center",
@@ -1381,7 +1654,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ch",
@@ -1414,7 +1694,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sincere",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "chair",
@@ -1495,7 +1782,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "escalation",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "cheems",
@@ -1528,7 +1822,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sincere",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "chosen",
@@ -1549,7 +1850,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "cmm",
@@ -1570,7 +1878,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "country",
@@ -1603,7 +1918,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "wordplay",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "crazypills",
@@ -1636,7 +1958,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "crow",
@@ -1669,7 +1998,14 @@
 					"font": "comic",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": true,
+				"weak": true,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "crowd",
@@ -1702,7 +2038,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "cryingfloor",
@@ -1735,7 +2078,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "self-deprecating",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "db",
@@ -1780,7 +2130,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "dbg",
@@ -1813,7 +2170,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "dg",
@@ -1858,7 +2222,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "disastergirl",
@@ -1891,7 +2262,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "dodgson",
@@ -1924,7 +2302,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "doge",
@@ -1957,7 +2342,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "dragon",
@@ -1978,7 +2370,14 @@
 					"font": "comic",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "drake",
@@ -2011,7 +2410,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "drowning",
@@ -2056,7 +2462,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "drunk",
@@ -2089,7 +2502,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ds",
@@ -2134,7 +2554,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "dsm",
@@ -2167,7 +2594,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "dwight",
@@ -2200,7 +2634,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "elf",
@@ -2233,7 +2674,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "elmo",
@@ -2302,7 +2750,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ermg",
@@ -2335,7 +2790,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "wordplay",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "exit",
@@ -2380,7 +2842,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "fa",
@@ -2413,7 +2882,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "facepalm",
@@ -2446,7 +2922,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "fbf",
@@ -2479,7 +2962,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "feelsgood",
@@ -2512,7 +3002,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": true,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "fetch",
@@ -2545,7 +3042,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "fine",
@@ -2578,7 +3082,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "firsttry",
@@ -2611,7 +3122,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "fmr",
@@ -2644,7 +3162,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "friends",
@@ -2689,7 +3214,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "fry",
@@ -2722,7 +3254,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "fwp",
@@ -2755,7 +3294,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "gandalf",
@@ -2788,7 +3334,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "gb",
@@ -2845,7 +3398,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "escalation",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "gears",
@@ -2878,7 +3438,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "genie",
@@ -2911,7 +3478,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ggg",
@@ -2944,7 +3518,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "glasses",
@@ -2977,7 +3558,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "gone",
@@ -3010,7 +3598,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "grave",
@@ -3055,7 +3650,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "gru",
@@ -3112,7 +3714,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "escalation",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "grumpycat",
@@ -3145,7 +3754,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "hagrid",
@@ -3178,7 +3794,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "handshake",
@@ -3223,7 +3846,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "happening",
@@ -3256,7 +3886,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": false,
+				"weak": true,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "harold",
@@ -3289,7 +3926,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "self-deprecating",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "headaches",
@@ -3310,7 +3954,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "hipster",
@@ -3343,7 +3994,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "home",
@@ -3388,7 +4046,14 @@
 					"font": "thin",
 					"align": "left"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "icanhas",
@@ -3421,7 +4086,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "imsorry",
@@ -3454,7 +4126,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "inigo",
@@ -3487,7 +4166,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "interesting",
@@ -3520,7 +4206,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ive",
@@ -3553,7 +4246,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "iw",
@@ -3586,7 +4286,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "jd",
@@ -3619,7 +4326,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "jetpack",
@@ -3640,7 +4354,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "jim",
@@ -3673,7 +4394,14 @@
 					"font": "comic",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "sincere",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "joker",
@@ -3706,7 +4434,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "jw",
@@ -3739,7 +4474,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "keanu",
@@ -3772,7 +4514,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "kermit",
@@ -3805,7 +4554,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "khaby-lame",
@@ -3838,7 +4594,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "kk",
@@ -3871,7 +4634,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "kombucha",
@@ -3904,7 +4674,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "kramer",
@@ -3937,7 +4714,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "leo",
@@ -3970,7 +4754,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "light",
@@ -4003,7 +4794,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "live",
@@ -4036,7 +4834,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ll",
@@ -4069,7 +4874,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "playful",
+				"dated": true,
+				"weak": true,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "lrv",
@@ -4102,7 +4914,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "made",
@@ -4171,7 +4990,14 @@
 					"font": "comic",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "mb",
@@ -4204,7 +5030,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "michael-scott",
@@ -4237,7 +5070,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "midwit",
@@ -4282,7 +5122,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "escalation",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "millers",
@@ -4339,7 +5186,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "mini-keanu",
@@ -4372,7 +5226,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "playful",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "mmm",
@@ -4405,7 +5266,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "money",
@@ -4438,7 +5306,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "mordor",
@@ -4471,7 +5346,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "morpheus",
@@ -4504,7 +5386,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "mouth",
@@ -4549,7 +5438,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "mw",
@@ -4582,7 +5478,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "nails",
@@ -4627,7 +5530,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "nice",
@@ -4660,7 +5570,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sincere",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "noah",
@@ -4717,7 +5634,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "noidea",
@@ -4750,7 +5674,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ntot",
@@ -4795,7 +5726,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "oag",
@@ -4828,7 +5766,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "officespace",
@@ -4861,7 +5806,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "older",
@@ -4894,7 +5846,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "oprah",
@@ -4927,7 +5886,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "panik-kalm-panik",
@@ -4972,7 +5938,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "patrick",
@@ -5005,7 +5978,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "perfection",
@@ -5086,7 +6066,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "persian",
@@ -5119,7 +6106,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "philosoraptor",
@@ -5152,7 +6146,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "pigeon",
@@ -5197,7 +6198,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "pooh",
@@ -5230,7 +6238,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "pool",
@@ -5275,7 +6290,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "prop3",
@@ -5296,7 +6318,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ptj",
@@ -5401,7 +6430,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "puffin",
@@ -5434,7 +6470,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "red",
@@ -5467,7 +6510,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "regret",
@@ -5500,7 +6550,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "remembers",
@@ -5533,7 +6590,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "reveal",
@@ -5590,7 +6654,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "right",
@@ -5659,7 +6730,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "rollsafe",
@@ -5692,7 +6770,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sad-biden",
@@ -5725,7 +6810,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sad-boehner",
@@ -5758,7 +6850,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sad-bush",
@@ -5791,7 +6890,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sad-clinton",
@@ -5824,7 +6930,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sad-obama",
@@ -5857,7 +6970,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sadfrog",
@@ -5890,7 +7010,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": true,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "saltbae",
@@ -5923,7 +7050,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "same",
@@ -5968,7 +7102,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sarcasticbear",
@@ -6001,7 +7142,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "say",
@@ -6034,7 +7182,14 @@
 					"font": "comic",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sb",
@@ -6067,7 +7222,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "scc",
@@ -6100,7 +7262,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "seagull",
@@ -6133,7 +7302,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": true,
+				"weak": true,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sf",
@@ -6166,7 +7342,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "self-deprecating",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sk",
@@ -6199,7 +7382,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ski",
@@ -6232,7 +7422,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "slap",
@@ -6265,7 +7462,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "snek",
@@ -6298,7 +7502,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "self-deprecating",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "soa",
@@ -6331,7 +7542,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sohappy",
@@ -6364,7 +7582,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sohot",
@@ -6397,7 +7622,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "soup-nazi",
@@ -6418,7 +7650,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "sparta",
@@ -6451,7 +7690,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "spiderman",
@@ -6484,7 +7730,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "spirit",
@@ -6553,7 +7806,14 @@
 					"font": "thin",
 					"align": "left"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "spongebob",
@@ -6586,7 +7846,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ss",
@@ -6619,7 +7886,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "stew",
@@ -6652,7 +7926,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "stonks",
@@ -6685,7 +7966,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "stop",
@@ -6766,7 +8054,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "stop-it",
@@ -6799,7 +8094,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "success",
@@ -6832,7 +8134,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "tenguy",
@@ -6865,7 +8174,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "toohigh",
@@ -6898,7 +8214,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "touch",
@@ -6931,7 +8254,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "tried",
@@ -6964,7 +8294,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sincere",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "trump",
@@ -6997,7 +8334,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "ugandanknuck",
@@ -7030,7 +8374,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "vince",
@@ -7075,7 +8426,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "wallet",
@@ -7180,7 +8538,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "waygd",
@@ -7213,7 +8578,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "deadpan",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "wddth",
@@ -7246,7 +8618,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "whatyear",
@@ -7279,7 +8658,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "deadpan",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "winter",
@@ -7312,7 +8698,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "wishes",
@@ -7333,7 +8726,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "wkh",
@@ -7378,7 +8778,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "woman-cat",
@@ -7411,7 +8818,14 @@
 					"font": "thin",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "contrast",
+				"tone": "sarcastic",
+				"dated": false,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "wonka",
@@ -7444,7 +8858,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "worst",
@@ -7477,7 +8898,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "xy",
@@ -7498,7 +8926,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": false,
+				"weak": true,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "yallgot",
@@ -7531,7 +8966,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "yodawg",
@@ -7564,7 +9006,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "setup-punchline",
+				"tone": "playful",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "yuno",
@@ -7597,7 +9046,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "reaction",
+				"tone": "sarcastic",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		},
 		{
 			"id": "zero-wing",
@@ -7618,7 +9074,14 @@
 					"font": "thick",
 					"align": "center"
 				}
-			]
+			],
+			"tags": {
+				"structure": "catchphrase",
+				"tone": "absurd",
+				"dated": true,
+				"weak": false,
+				"source": "manual-rule"
+			}
 		}
 	]
 }

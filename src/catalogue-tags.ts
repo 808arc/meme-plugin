@@ -1,0 +1,66 @@
+/** Tags for the bundled memegen catalogue (`data/memegen-templates.json`, field `tags`).
+ *
+ * Assigned by hand from each template's name and example caption only. They are not
+ * validated against real use or a learner panel: every entry says `source: "manual-rule"`
+ * so a person can review and change it. `scripts/sync-memegen.mjs` keeps these tags
+ * when it regenerates the file.
+ *
+ * Default hiding: a template with `dated` or `weak` set is left out of the pool unless
+ * the caller asks for hidden templates too. Untagged templates stay in. */
+
+/** How the joke is built, from the template's name and caption. */
+export const STRUCTURES = [
+	/** A face or pose reacts to a situation named in the caption. */
+	"reaction",
+	/** Two or more things are set side by side and one is judged against the other. */
+	"contrast",
+	/** Steps or stages that escalate, or a ranked list. */
+	"escalation",
+	/** A setup line followed by a twist or punchline. */
+	"setup-punchline",
+	/** A quotable line or image that carries the joke on its own. */
+	"catchphrase",
+	/** The joke depends on spelling, a pun, or a sound-alike. */
+	"wordplay",
+] as const;
+
+/** The mood the caption is written in. */
+export const TONES = [
+	"playful",
+	"sarcastic",
+	"absurd",
+	"deadpan",
+	"self-deprecating",
+	"sincere",
+] as const;
+
+export type Structure = (typeof STRUCTURES)[number];
+export type Tone = (typeof TONES)[number];
+
+export interface TemplateTags {
+	structure: Structure;
+	tone: Tone;
+	/** Tied to a moment, event or meme wave from roughly a decade ago or more. */
+	dated: boolean;
+	/** The frame is too thin to reuse for a learning joke. */
+	weak: boolean;
+	/** How this entry was made. Only "manual-rule" exists so far. */
+	source: "manual-rule";
+}
+
+export function isTemplateTags(value: unknown): value is TemplateTags {
+	if (!value || typeof value !== "object") return false;
+	const tags = value as Record<string, unknown>;
+	return (
+		(STRUCTURES as readonly unknown[]).includes(tags.structure) &&
+		(TONES as readonly unknown[]).includes(tags.tone) &&
+		typeof tags.dated === "boolean" &&
+		typeof tags.weak === "boolean" &&
+		tags.source === "manual-rule"
+	);
+}
+
+/** True when the default pool should leave this template out. */
+export function hiddenByDefault(tags: TemplateTags | undefined): boolean {
+	return Boolean(tags && (tags.dated || tags.weak));
+}

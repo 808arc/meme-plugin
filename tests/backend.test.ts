@@ -580,6 +580,7 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 	const initial = await first.call<PluginState>("get-state");
 	assert.deepEqual(initial.settings, {
 		model: null,
+		captionModel: null,
 		emphasis: true,
 		cooldownDays: 14,
 		cooldownGrowth: 2,
@@ -1307,6 +1308,57 @@ test("web search: off, unconfigured, NC licence or no term match skip the judge"
 		"custom",
 	);
 	assert.equal(filtered.judged(), 0);
+});
+
+// #36 comic effect
+test("caption model: null uses the other steps' model; a set one writes the caption only", async (t) => {
+	const isFill = (request: PluginInferenceRequest) =>
+		request.context.systemPrompt!.startsWith("You write the caption");
+	const plain = fixture(t, { memes: [custom[0]] });
+	const a = plain.start();
+	await a.call("save-settings", offline);
+	await a.call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
+	assert.ok(plain.requests.some(isFill));
+	for (const request of plain.requests)
+		assert.deepEqual(
+			request.model,
+			cheap,
+			"null: the cheap slot for every step",
+		);
+
+	const split = fixture(t, { memes: [custom[0]] });
+	const b = split.start();
+	await b.call("save-settings", { ...offline, captionModel: other });
+	assert.deepEqual(
+		(await b.call<PluginState>("get-state")).settings.captionModel,
+		other,
+	);
+	await b.call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
+	const fills = split.requests.filter(isFill);
+	assert.equal(fills.length, 1);
+	assert.deepEqual(
+		fills[0]!.model,
+		other,
+		"the caption step uses the set model",
+	);
+	const rest = split.requests.filter((request) => !isFill(request));
+	assert.ok(rest.length >= 2, "template and fact check still ran");
+	for (const request of rest)
+		assert.deepEqual(
+			request.model,
+			cheap,
+			"the other steps keep the cheap slot",
+		);
+
+	await b.call("save-settings", { captionModel: null });
+	assert.equal(
+		(await b.call<PluginState>("get-state")).settings.captionModel,
+		null,
+	);
+	await assert.rejects(
+		b.call("save-settings", { captionModel: { provider: "", id: "x" } }),
+		/captionModel must be/,
+	);
 });
 
 test("web search settings: the agent is configured by the learner, not hardcoded", async (t) => {

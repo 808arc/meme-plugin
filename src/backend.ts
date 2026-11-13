@@ -334,11 +334,13 @@ export function activate(
 		};
 	};
 
-	async function resolveModel(): Promise<PluginModelSpec> {
+	async function resolveModel(
+		pinned: Settings["model"] = state.settings.model,
+	): Promise<PluginModelSpec> {
 		const catalog = await ctx.inference.catalog();
 		alive();
-		const pin = state.settings.model
-			? { model: state.settings.model, thinkingLevel: undefined }
+		const pin = pinned
+			? { model: pinned, thinkingLevel: undefined }
 			: catalog.slots.cheap;
 		if (!pin?.model)
 			throw new Error(
@@ -493,6 +495,7 @@ export function activate(
 	async function fillChecked(
 		purpose: PluginCallPurpose,
 		model: PluginModelSpec,
+		captionModel: PluginModelSpec,
 		meme: Meme,
 		template: Template,
 		concept: Concept,
@@ -501,7 +504,7 @@ export function activate(
 		for (let attempt = 1; ; attempt++) {
 			const filling = await ask(
 				purpose,
-				model,
+				captionModel,
 				fillRequest({
 					meme,
 					template,
@@ -715,6 +718,10 @@ export function activate(
 		if (web) return web;
 
 		const model = await resolveModel();
+		// #36: the caption step may use its own model; null: the same model as the rest.
+		const captionModel = state.settings.captionModel
+			? await resolveModel(state.settings.captionModel)
+			: model;
 		if (!memes.length)
 			throw new Error(
 				"The meme pool is empty. Enable the bundled catalogue or add custom memes.",
@@ -766,12 +773,19 @@ export function activate(
 			// correction, another meme is tried.
 			let filling: Filling;
 			if (mode === "answer")
-				filling = await fillChecked(purpose, model, meme, template, concept);
+				filling = await fillChecked(
+					purpose,
+					model,
+					captionModel,
+					meme,
+					template,
+					concept,
+				);
 			else {
 				try {
 					filling = await ask(
 						purpose,
-						model,
+						captionModel,
 						modeFillRequest(mode, { meme, template, concept, early }),
 						(raw) => {
 							stage("checking");

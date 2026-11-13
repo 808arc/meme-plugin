@@ -110,6 +110,8 @@ export interface GeneratedMeme {
 export interface Settings {
 	/** Explicit model; null uses the host's configured cheap slot. */
 	model: { provider: string; id: string } | null;
+	/** #36: model for the caption step only. Null: the same model as the other steps. */
+	captionModel: { provider: string; id: string } | null;
 	/** Step 5 of the README. */
 	emphasis: boolean;
 	/** Days a meme stays out of rotation after its first use. 0 disables the cooldown. */

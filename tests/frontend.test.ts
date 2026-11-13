@@ -37,6 +37,7 @@ const state: PluginState = {
 	nextMode: "answer",
 	settings: {
 		model: null,
+		captionModel: null,
 		emphasis: true,
 		cooldownDays: 14,
 		cooldownGrowth: 2,

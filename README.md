@@ -84,6 +84,7 @@ replaces only the installed `dist/`.
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | Model | cheap model slot | Writes the captions. |
+| Caption model | Model | Model for the caption text only; picking and fact check keep Model. Set separately, so a stronger model writes captions while the cheap one does the rest. |
 | Meme mode | Answer | Answer: states the fact. Hint, Think: point at it, never state it; also work before reveal. Shuffle: Answer, Hint, Think in turn, one per question; each label shows its mode. |
 | Tone | none | Comic tone of the wording: deadpan, absurd, sarcastic, self-deprecating, playful. Facts unchanged. |
 | Add emphasis | on | Step 5. |

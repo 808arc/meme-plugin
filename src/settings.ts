@@ -35,6 +35,7 @@ export const AUTOMATIC_MEMES: readonly AutomaticMemes[] = Object.freeze([
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	model: null,
+	captionModel: null,
 	emphasis: true,
 	cooldownDays: 14,
 	cooldownGrowth: 2,
@@ -108,9 +109,10 @@ export function applySettingsPatch(
 	const next: Settings = { ...current };
 	for (const [key, value] of Object.entries(patch)) {
 		switch (key) {
-			case "model": {
+			case "model":
+			case "captionModel": {
 				if (value === null) {
-					next.model = null;
+					next[key] = null;
 					break;
 				}
 				const model = value as { provider?: unknown; id?: unknown } | undefined;
@@ -122,8 +124,8 @@ export function applySettingsPatch(
 					typeof model.id !== "string" ||
 					!model.id
 				)
-					throw new Error("model must be {provider, id} or null");
-				next.model = { provider: model.provider, id: model.id };
+					throw new Error(`${key} must be {provider, id} or null`);
+				next[key] = { provider: model.provider, id: model.id };
 				break;
 			}
 			case "searchAgent": {

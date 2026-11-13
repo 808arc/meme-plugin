@@ -48,10 +48,12 @@ const state: PluginState = {
 		searchAgent: null,
 		mode: "answer",
 		teacherMemes: "off",
+		automaticMemes: "off",
 	},
 	pool: { memegen: 209, custom: 1, coolingDown: 3 },
 	customFolder: "/plugins/meme-plugin/data",
 	problems: ["custom-memes.json entry 2: bad"],
+	automatic: { used: 0, perDay: 10 },
 };
 
 function fixture(
@@ -129,8 +131,20 @@ function fixture(
 				dispose() {},
 			};
 		};
+	const appEvents: ((event: { type: string }) => void)[] = [];
+	let refreshes = 0;
 	const ctx = {
 		signal: activation.signal,
+		onAppEvent(listener: (event: { type: string }) => void) {
+			appEvents.push(listener);
+			return () => {};
+		},
+		onResync() {
+			return () => {};
+		},
+		refreshActions() {
+			refreshes++;
+		},
 		registerAction(action: PluginAction) {
 			actions.set(action.id, action);
 			return () => {};
@@ -224,7 +238,37 @@ function fixture(
 		widgets.findLast(
 			(entry) => entry.kind === "button" && entry.props.label === label,
 		)!;
+	/** A top-bar render: the host evaluates the action's dynamic `disabled` predicate. */
+	let reads = 0;
+	const render = (view: Record<string, unknown>) => {
+		const disabled = actions.get("meme-this")!.disabled as (
+			context: PluginActionContext,
+		) => boolean;
+		return disabled({
+			placement: "top-bar",
+			surface: "session",
+			sessionId: "s",
+			kind: "teaching",
+			surfaceTarget: "surface-target",
+			get view() {
+				reads++;
+				return {
+					sessionId: "s",
+					transcript: [],
+					messages: [],
+					input: { type: "text" },
+					...view,
+				};
+			},
+		} as unknown as PluginActionContext);
+	};
 	return {
+		render,
+		reads: () => reads,
+		refreshes: () => refreshes,
+		appEvent: (type: string) => {
+			for (const listener of appEvents) listener({ type });
+		},
 		calls,
 		requestIds,
 		notify: (topic: string, data: unknown) => {
@@ -509,6 +553,7 @@ test("settings publish only what the backend accepted", async (t) => {
 			["webSearch", "toggle", true],
 			["useMemegen", "toggle", true],
 			["teacherMemes", "dropdown", "off"],
+			["automaticMemes", "dropdown", "off"],
 			["imageBaseUrl", "text", "https://api.memegen.link"],
 			["ownMemesShare", "slider", 100],
 			["customFolder", "text", ""],
@@ -761,4 +806,170 @@ test("Answer mode still refuses an unrevealed question; revealed options travel 
 		context: "Answer options shown to the learner: Jensen Huang",
 		options: ["Jensen Huang"],
 	});
+});
+
+// #18 buttonless mode
+const answered = (
+	toolCallId: string,
+	extra: Record<string, unknown> = {},
+	answeredAt = new Date(Date.now() + 1000).toISOString(),
+) => ({
+	role: "toolResult",
+	toolCallId,
+	toolName: "quiz",
+	content: [],
+	isError: false,
+	details: {
+		kind: "quiz",
+		questionText: "Who backed CUDA?",
+		options: [
+			{ index: 0, label: "Jensen Huang" },
+			{ index: 1, label: "Lisa Su" },
+		],
+		dontKnow: false,
+		answers: [],
+		correct: true,
+		answeredAt,
+		...extra,
+	},
+});
+const automaticBackend =
+	(mode: string, log: unknown[] = []) =>
+	(operation: string, input: unknown) => {
+		if (operation === "get-state")
+			return {
+				...state,
+				settings: { ...state.settings, automaticMemes: mode },
+			};
+		if (operation === "auto-meme") {
+			log.push(input);
+			return { status: "meme", meme: generated("custom:auto", ["auto"]) };
+		}
+		return null;
+	};
+
+test("automatic memes are off by default: no view read, no request, action stays enabled", async (t) => {
+	const f = fixture(t, automaticBackend("off"));
+	assert.equal(f.render({ messages: [answered("q1")] }), false);
+	await settle();
+	assert.deepEqual(
+		f.calls.map((call) => call.operation),
+		["get-state"],
+	);
+	assert.equal(
+		f.refreshes(),
+		1,
+		"the predicate is re-run once settings are known",
+	);
+	assert.equal(f.render({ messages: [answered("q1")] }), false);
+	await settle();
+	assert.equal(f.reads(), 0, "off: the session view is never read");
+	assert.equal(f.surfaces.length, 0);
+	assert.ok(
+		!f.calls.some((call) => call.operation === "auto-meme"),
+		"off: nothing is sent",
+	);
+});
+
+test("an automatic meme appears only after an answer, folded and dismissible", async (t) => {
+	const sent: unknown[] = [];
+	const f = fixture(t, automaticBackend("every", sent));
+	f.render({ input: { type: "text" } });
+	await settle();
+
+	// A pending question, even revealed, has no answer yet: nothing.
+	f.render({ input: question });
+	// An unrevealed next question on screen: the reveal rule holds nothing back early.
+	f.render({
+		input: { ...question, revealed: false },
+		messages: [answered("q1")],
+	});
+	await settle();
+	assert.deepEqual(sent, []);
+	assert.equal(f.surfaces.length, 0);
+
+	f.render({ input: { type: "text" }, messages: [answered("q1")] });
+	await settle();
+	assert.deepEqual(sent, [
+		{
+			key: "s:q1",
+			prompt: "Who backed CUDA?",
+			context: "Answer options shown to the learner: Jensen Huang | Lisa Su",
+			wrong: false,
+		},
+	]);
+	const surface = f.surfaces[0]!;
+	assert.equal(
+		surface.container.querySelector("[data-plugin-initial-focus]"),
+		null,
+		"an automatic meme takes no focus",
+	);
+	const fold = surface.container.querySelector(
+		".meme-plugin-fold",
+	) as HTMLElement;
+	assert.equal(fold.hidden, true, "collapsed by default");
+	assert.equal(
+		fold.querySelector(".meme-plugin-line")!.textContent,
+		"auto",
+		"the meme is ready behind the fold",
+	);
+	(f.button("Show meme").props.onClick as () => void)();
+	assert.equal(fold.hidden, false);
+	assert.equal(f.button("Hide meme").props.label, "Hide meme");
+	(f.button("Dismiss").props.onClick as () => void)();
+	assert.equal(surface.signal.signal.aborted, true);
+	assert.equal(surface.container.children.length, 0);
+
+	// Same question again (later renders): never a second automatic meme.
+	f.render({ input: { type: "text" }, messages: [answered("q1")] });
+	f.appEvent("turn-settled");
+	await settle();
+	f.render({ input: { type: "text" }, messages: [answered("q1")] });
+	await settle();
+	assert.equal(sent.length, 1);
+	assert.equal(f.surfaces.length, 1);
+});
+
+test("automatic memes skip old answers, dismissed questions and an open meme", async (t) => {
+	const sent: unknown[] = [];
+	const f = fixture(t, automaticBackend("wrong", sent));
+	f.render({});
+	await settle();
+	// Answered before this window started: history, not a fresh answer.
+	f.render({ messages: [answered("old", {}, "2020-01-01T00:00:00.000Z")] });
+	f.render({ messages: [answered("gone", { dismissed: true })] });
+	await settle();
+	assert.deepEqual(sent, []);
+
+	void f.press(question);
+	f.render({ messages: [answered("q2", { correct: false })] });
+	await settle();
+	assert.deepEqual(sent, [], "the learner already has a meme open");
+
+	f.surfaces[0]!.signal.abort();
+	f.surfaces[0]!.cleanup?.();
+	f.render({ messages: [answered("q3", { correct: false })] });
+	await settle();
+	assert.deepEqual(
+		(sent as { key: string; wrong: boolean }[]).map((entry) => [
+			entry.key,
+			entry.wrong,
+		]),
+		[["s:q3", true]],
+		"the graded verdict travels; the backend applies the frequency",
+	);
+});
+
+test("settings say when today's automatic budget is used up", async (t) => {
+	const f = fixture(t, () => ({
+		...state,
+		automatic: { used: 10, perDay: 10 },
+	}));
+	const container = f.document.createElement("div");
+	f.mountSettings(container);
+	await settle();
+	assert.match(
+		container.textContent!,
+		/automatic memes are used up.*Meme this still works/,
+	);
 });

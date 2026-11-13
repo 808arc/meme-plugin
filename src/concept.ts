@@ -171,3 +171,69 @@ export function optionLabels(view: PluginSessionViewContext): string[] {
 		? labels(input.question.options)
 		: [];
 }
+/** #18: the last native question the learner answered, read from the session history. */
+export interface AnsweredQuestion {
+	/** Session and question call id. */
+	key: string;
+	concept: Concept;
+	/** The host graded the answer as wrong. Ungraded answers are not wrong. */
+	wrong: boolean;
+	/** When the learner answered, in ms; NaN when unknown. */
+	answeredAt: number;
+}
+
+/** The host stores the graded answer (`QuestionAnswerData`) as the question call's tool
+ * result `details`. Only the latest one counts; a dismissed question has no answer to show. */
+export function lastAnsweredQuestion(
+	view: PluginSessionViewContext,
+): AnsweredQuestion | null {
+	for (let index = view.messages.length - 1; index >= 0; index--) {
+		// Read as plain data: the deep readonly message type is too large to narrow.
+		const message = view.messages[index] as unknown as {
+			role?: unknown;
+			toolCallId?: unknown;
+			details?: unknown;
+		};
+		if (message.role !== "toolResult" || typeof message.toolCallId !== "string")
+			continue;
+		const details = message.details as
+			| {
+					questionText?: unknown;
+					answeredAt?: unknown;
+					options?: unknown;
+					correct?: unknown;
+					dismissed?: unknown;
+			  }
+			| null
+			| undefined;
+		if (
+			!details ||
+			typeof details !== "object" ||
+			typeof details.questionText !== "string" ||
+			typeof details.answeredAt !== "string"
+		)
+			continue;
+		if (details.dismissed === true) return null;
+		const options = Array.isArray(details.options)
+			? details.options
+					.map((option: { label?: unknown } | null) =>
+						typeof option?.label === "string" ? option.label : "",
+					)
+					.filter(Boolean)
+			: [];
+		const result = found(
+			details.questionText,
+			options.length
+				? `Answer options shown to the learner: ${options.join(" | ")}`
+				: undefined,
+		);
+		if (result.status !== "found") return null;
+		return {
+			key: `${view.sessionId}:${message.toolCallId}`,
+			concept: result.concept,
+			wrong: details.correct === false,
+			answeredAt: Date.parse(details.answeredAt),
+		};
+	}
+	return null;
+}

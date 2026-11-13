@@ -4,6 +4,7 @@ import type {
 	PluginFrontendContext,
 	PluginSettingsRow,
 	PluginSurfaceProps,
+	PluginToolRenderProps,
 	PluginWidgetHandle,
 } from "learnharness-plugin-api";
 import { type ConceptResult, conceptFromView } from "./concept.ts";
@@ -226,6 +227,15 @@ function settingsRows(
 			onChange: (useMemegen) => save({ useMemegen }),
 		},
 		{
+			type: "toggle",
+			key: "teacherTool",
+			label: "Let the teacher add memes",
+			description:
+				"The teacher may put one meme in the chat when it helps a concept stick. Only after you have tried the question. Off by default.",
+			value: settings.teacherTool,
+			onChange: (teacherTool) => save({ teacherTool }),
+		},
+		{
 			type: "text",
 			key: "imageBaseUrl",
 			label: "Image server",
@@ -340,8 +350,62 @@ function mountSettings(
 	return () => root.remove();
 }
 
+/** Teacher tool result: the meme the teacher put in the chat. Renders only what the backend returned. */
+function mountTeacherMeme(
+	ctx: PluginFrontendContext,
+	container: HTMLElement,
+	tool: PluginToolRenderProps,
+): () => void {
+	const root = element("div", "meme-plugin-tool");
+	container.append(root);
+	const note = (text: string, failed = false) =>
+		root.replaceChildren(
+			element(
+				"p",
+				failed ? "meme-plugin-status meme-plugin-error" : "meme-plugin-status",
+				text,
+			),
+		);
+	if (tool.state === "output-error") {
+		note(tool.errorText || "The meme could not be made.", true);
+		return () => root.remove();
+	}
+	const result = tool.output as GeneratedMeme | undefined;
+	if (
+		tool.state !== "output-available" ||
+		!result ||
+		!Array.isArray(result.lines)
+	) {
+		note("Making a meme…");
+		return () => root.remove();
+	}
+	let unmount: (() => void) | null = null;
+	const show = (image: MemeImage | null) => {
+		if (tool.signal.aborted) return;
+		unmount?.();
+		root.replaceChildren();
+		unmount = mountMeme(root, result, image);
+		root.append(element("p", "meme-plugin-fact", result.fact));
+	};
+	if (result.meme.hasImage) {
+		// A missing image is not a failure: the caption still shows as text.
+		ctx
+			.call<MemeImage | null>("get-image", { id: result.meme.id })
+			.then(show, () => show(null));
+	} else show(null);
+	return () => {
+		unmount?.();
+		root.remove();
+	};
+}
+
 export function activate(ctx: PluginFrontendContext): void {
 	let open: PluginWidgetHandle<PluginSurfaceProps> | null = null;
+
+	ctx.registerToolRenderer({
+		toolName: "meme_teach",
+		mount: (container, tool) => mountTeacherMeme(ctx, container, tool),
+	});
 
 	ctx.registerAction({
 		id: "meme-this",

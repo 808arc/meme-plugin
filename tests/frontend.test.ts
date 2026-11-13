@@ -39,6 +39,7 @@ const state: PluginState = {
 		cooldownGrowth: 2,
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
+		teacherTool: false,
 	},
 	pool: { memegen: 209, custom: 1, coolingDown: 3 },
 	problems: ["custom-memes.json entry 2: bad"],
@@ -133,6 +134,9 @@ function fixture(
 		},
 		registerSettings(mount: typeof settings) {
 			settings = mount;
+			return () => {};
+		},
+		registerToolRenderer() {
 			return () => {};
 		},
 		async call(operation: string, input?: unknown) {
@@ -460,6 +464,7 @@ test("settings publish only what the backend accepted", async (t) => {
 			["cooldownDays", "number", 14],
 			["cooldownGrowth", "number", 2],
 			["useMemegen", "toggle", true],
+			["teacherTool", "toggle", false],
 			["imageBaseUrl", "text", "https://api.memegen.link"],
 		],
 	);

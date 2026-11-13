@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	cooldownGrowth: 2,
 	useMemegen: true,
 	imageBaseUrl: "https://api.memegen.link",
+	teacherTool: false,
 });
 
 export const LIMITS = Object.freeze({
@@ -74,6 +75,7 @@ export function applySettingsPatch(
 			}
 			case "emphasis":
 			case "useMemegen":
+			case "teacherTool":
 				if (typeof value !== "boolean")
 					throw new Error(`${key} must be true or false`);
 				next[key] = value;

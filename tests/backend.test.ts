@@ -100,6 +100,7 @@ function fixture(
 	const start = () => {
 		const controller = new AbortController();
 		const handlers = new Map<string, (input: unknown) => unknown>();
+		const registered: { create(context: unknown): unknown[] }[] = [];
 		const ctx = {
 			manifest: {
 				apiVersion: 1,
@@ -112,6 +113,15 @@ function fixture(
 			dataDirectory,
 			signal: controller.signal,
 			cleanup() {},
+			registerInstructions() {
+				return () => {};
+			},
+			registerTools(contribution: { create(context: unknown): unknown[] }) {
+				registered.push(contribution);
+				return () => {
+					registered.splice(registered.indexOf(contribution), 1);
+				};
+			},
 			handle(name: string, handler: (input: unknown) => unknown) {
 				handlers.set(name, handler);
 				return () => {
@@ -168,7 +178,7 @@ function fixture(
 			if (!handler) throw new Error(`No handler: ${name}`);
 			return (await handler(input)) as T;
 		};
-		return { call, dispose, controller };
+		return { call, dispose, controller, registered };
 	};
 	return {
 		dataDirectory,
@@ -422,6 +432,7 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 		cooldownGrowth: 2,
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
+		teacherTool: false,
 	});
 	assert.equal(initial.pool.memegen, memegenMemes("").length);
 	assert.equal(initial.pool.custom, 2);
@@ -650,4 +661,28 @@ test("the bundled catalogue is well formed", () => {
 				assert.ok(value >= 0 && value <= 1);
 	}
 	assert.ok(memegenMemes("").every((meme) => meme.image === ""));
+});
+
+test("the teacher meme tool is registered only while its setting is on", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const { call, registered } = f.start();
+	assert.equal(registered.length, 0, "off by default");
+	await call("save-settings", { teacherTool: true });
+	assert.equal(registered.length, 1);
+	const [tool] = registered[0]!.create({ chatId: "c", agent: "teacher" }) as {
+		name: string;
+		parameters: {
+			properties: Record<string, unknown>;
+			additionalProperties: boolean;
+		};
+	}[];
+	assert.equal(tool!.name, "meme_teach");
+	// No answer field: the tool only ever receives a concept.
+	assert.deepEqual(Object.keys(tool!.parameters.properties).sort(), [
+		"context",
+		"prompt",
+	]);
+	assert.equal(tool!.parameters.additionalProperties, false);
+	await call("save-settings", { teacherTool: false });
+	assert.equal(registered.length, 0, "turning it off removes the tool");
 });

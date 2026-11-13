@@ -36,6 +36,9 @@ const STATE_FILE = "state.json";
 /** A meme whose caption cannot be templated is skipped; try this many before giving up. */
 const MEME_ATTEMPTS = 3;
 const MAX_OUTPUT_TOKENS = 2048;
+const TEACHER_TOOL = "meme_teach";
+/** Reveal rule: the tool only ever gets a concept, and only after the learner has tried. */
+const TEACHER_INSTRUCTIONS = `A meme plugin is enabled. Call the ${TEACHER_TOOL} tool only when a meme would help a concept stick, and only after the learner has answered the current question or it has been revealed. Never call it while a question is pending. Pass the concept as "prompt" and never state the answer to an unrevealed question. Call it at most once per concept.`;
 
 interface CachedTemplate extends Template {
 	captionHash: string;
@@ -377,7 +380,74 @@ export function activate(ctx: PluginBackendContext): () => void {
 			: new Error("No meme could be prepared.");
 	}
 
+	// One paid request chain at a time, however many windows or tool calls ask.
+	const guarded = async (run: () => Promise<GeneratedMeme>) => {
+		alive();
+		if (generating) throw new Error("A meme is already being made.");
+		generating = true;
+		try {
+			return await run();
+		} finally {
+			generating = false;
+		}
+	};
+
+	const teacherTool = () => ({
+		name: TEACHER_TOOL,
+		label: "Teacher meme",
+		description:
+			"Put one meme in the chat to help a concept stick. Only after the learner has tried the question; never reveal an unrevealed answer.",
+		parameters: {
+			type: "object",
+			properties: {
+				prompt: { type: "string", minLength: 1, maxLength: MAX_PROMPT_LENGTH },
+				context: { type: "string", maxLength: MAX_CONTEXT_LENGTH },
+			},
+			required: ["prompt"],
+			additionalProperties: false,
+		},
+		execute: async (
+			_toolCallId: string,
+			input: unknown,
+			signal?: AbortSignal,
+		) => {
+			alive();
+			if (signal?.aborted) throw new Error("Meme tool cancelled");
+			const meme = await guarded(() => generate(input));
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Meme shown to the learner: ${meme.lines.filter(Boolean).join(" / ")}. Fact it teaches: ${meme.fact}`,
+					},
+				],
+				details: meme,
+			};
+		},
+	});
+
+	// Teacher tool and instructions exist only while the setting is on; changes apply to future turns.
+	let teacherRelease: (() => void)[] = [];
+	const syncTeacherTool = () => {
+		for (const release of teacherRelease.splice(0)) release();
+		if (disposed || !state.settings.teacherTool) return;
+		teacherRelease = [
+			ctx.registerInstructions({
+				agents: ["teacher"],
+				text: TEACHER_INSTRUCTIONS,
+			}),
+			ctx.registerTools({
+				agents: ["teacher"],
+				create: () => [teacherTool()],
+			}),
+		];
+	};
+	syncTeacherTool();
+
 	const unregister = [
+		() => {
+			for (const release of teacherRelease.splice(0)) release();
+		},
 		ctx.handle("get-state", () => {
 			alive();
 			return view();
@@ -385,6 +455,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 		ctx.handle("save-settings", (input) => {
 			alive();
 			save({ ...state, settings: applySettingsPatch(state.settings, input) });
+			syncTeacherTool();
 			return view();
 		}),
 		ctx.handle("reset-usage", () => {
@@ -392,17 +463,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 			save({ ...state, usage: {} });
 			return view();
 		}),
-		ctx.handle("generate", async (input) => {
-			alive();
-			// One paid request chain at a time, however many windows ask.
-			if (generating) throw new Error("A meme is already being made.");
-			generating = true;
-			try {
-				return await generate(input);
-			} finally {
-				generating = false;
-			}
-		}),
+		ctx.handle("generate", (input) => guarded(() => generate(input))),
 		ctx.handle("get-image", async (input): Promise<MemeImage | null> => {
 			alive();
 			const id = object(input).id;

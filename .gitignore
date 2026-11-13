@@ -1,1 +1,21 @@
 .DS_Store
+
+# custom
+plugin-sync.sh
+
+# deps / build
+node_modules/
+dist/
+# local file: dependency for learnharness-plugin-api
+.sdk/
+*.tsbuildinfo
+
+# logs / env
+npm-debug.log*
+.env
+.env.*
+
+# editor / local
+.claude/settings.local.json
+.vscode/
+.idea/

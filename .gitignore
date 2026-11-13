@@ -1,8 +1,5 @@
 .DS_Store
 
-# custom
-plugin-sync.sh
-
 # deps / build
 node_modules/
 dist/

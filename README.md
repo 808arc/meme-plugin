@@ -92,6 +92,8 @@ replaces only the installed `dist/`.
 | Minimum cooldown after rejecting (days) | 1 | A meme rejected with **Not this one** stays out at least this long, even with cooldown 0. |
 | Own memes first (%) | 100 | Chance a pick is one of your own memes while one is out of cooldown. 100: always. Lower mixes in the catalogue. |
 | Custom memes folder | empty (`data/`) | Absolute path to a folder with `custom-memes.json` and `custom-images/`. Only read. |
+| Search the web for memes | on | Before generating, look for an existing meme through the search agent. Off: local sources and generation only. |
+| Search agent | none | The model and provider that search uses. Without one, settings show "On, but needs a search agent" and nothing is searched. |
 
 **Reset cooldowns** makes every meme eligible again.
 
@@ -107,7 +109,7 @@ The plugin lets you watch memes during the learning process. Intended sources, i
 1. Earlier memes for the same concept, reused as a limited share of picks so they don't repeat often. Planned ([#9](https://github.com/808arc/meme-plugin/issues/9), [#19](https://github.com/808arc/meme-plugin/issues/19)).
 2. Your own memes (below). Shipped. Picked first while one is out of cooldown (**Own memes first**, 100%); then the catalogue.
 3. The bundled catalogue, about 200 classic templates. Shipped. Dated ones to be hidden ([#6](https://github.com/808arc/meme-plugin/issues/6)).
-4. Web search for an existing meme. Planned, on by default, through the search agent you configure ([#11](https://github.com/808arc/meme-plugin/issues/11)).
+4. Web search for an existing meme, on by default, through the search agent you configure. Shipped; needs a search agent configured ([#11](https://github.com/808arc/meme-plugin/issues/11)).
 
 If no relevant meme is found, the plugin generates a new caption straight away. Shipped. Fitting picks planned ([#4](https://github.com/808arc/meme-plugin/issues/4)).
 
@@ -157,7 +159,8 @@ deletes your files.
   per meme. Images are cached in `data/image-cache/`.
 - Nothing else. Writes only in `data/`, even with a custom memes folder elsewhere
   (read only) and for exports. Learning records untouched.
-- Planned: web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme-plugin/issues/11)). A settings switch turns it off.
+- Web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme-plugin/issues/11)). A settings switch turns it off.
+- Loading a web meme's image exposes your IP address to the host of that image.
 
 ## Development
 

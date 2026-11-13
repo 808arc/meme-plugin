@@ -104,8 +104,12 @@ function mountSurface(
 		image = picture;
 		rating = next.rating ?? null;
 		unmountMeme = mountMeme(body, next, picture);
-		fact.textContent = next.fact;
+		fact.textContent =
+			next.webMatch === "related"
+				? "Related meme: found on the web, not checked as an answer."
+				: next.fact;
 		credit.append(`Meme: ${next.meme.name}`);
+		if (next.meme.credit) credit.append(` · Credit: ${next.meme.credit}`);
 		if (next.meme.source && /^https?:\/\//.test(next.meme.source)) {
 			const link = element("a", "", "about this meme");
 			link.href = next.meme.source;
@@ -368,6 +372,18 @@ function settingsRows(
 		},
 		{
 			type: "toggle",
+			key: "webSearch",
+			label: "Search the web for memes",
+			description: `${
+				settings.webSearch && !settings.searchAgent
+					? "On, but needs a search agent: choose one below. Until then nothing is searched. "
+					: ""
+			}Before generating, look for an existing meme on the web through the search agent below. The concept is sent to that agent and its search providers. Off: local sources and generation only.`,
+			value: settings.webSearch,
+			onChange: (webSearch) => save({ webSearch }),
+		},
+		{
+			type: "toggle",
 			key: "useMemegen",
 			label: "Use the bundled catalogue",
 			description: `${bundled || "About 200"} classic image memes from the open-source memegen project.`,
@@ -434,6 +450,9 @@ function mountSettings(
 		const pickerSlot = element("span", ""),
 			defaultSlot = element("span", "");
 		modelRow.append(pickerSlot, defaultSlot);
+		const searchRow = element("div", "meme-plugin-settings-model");
+		const searchSlot = element("span", "");
+		searchRow.append(searchSlot);
 		const rowsSlot = element("div", "");
 		const summary = element("p", "meme-plugin-settings-note");
 		const resetSlot = element("div", "");
@@ -448,6 +467,13 @@ function mountSettings(
 				"Writes the captions. Each meme costs one or two short requests. Default: the cheap model slot.",
 			),
 			modelRow,
+			element("p", "meme-plugin-settings-label", "Search agent"),
+			element(
+				"p",
+				"meme-plugin-settings-note",
+				"Looks for existing memes when web search is on. Pick the model and provider you trust with your questions. Without one, no search runs.",
+			),
+			searchRow,
 			rowsSlot,
 			summary,
 			resetSlot,
@@ -461,6 +487,7 @@ function mountSettings(
 			if (signal.aborted) return;
 			state = next;
 			picker.update({ value: state.settings.model ?? undefined });
+			searchPicker.update({ value: state.settings.searchAgent ?? undefined });
 			useDefault.update({ disabled: !state.settings.model });
 			rows.update({
 				rows: settingsRows(state.settings, state.pool.memegen, save),
@@ -479,6 +506,15 @@ function mountSettings(
 				value: undefined,
 				onChange: (model) =>
 					save({ model: { provider: model.provider, id: model.id } }),
+			},
+			{ signal },
+		);
+		const searchPicker = ctx.ui.mountModelPicker(
+			searchSlot,
+			{
+				value: undefined,
+				onChange: (model) =>
+					save({ searchAgent: { provider: model.provider, id: model.id } }),
 			},
 			{ signal },
 		);

@@ -59,6 +59,14 @@ import {
 	shortlist,
 } from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
+import {
+	judgeRequest,
+	parseJudgement,
+	type SearchAgent,
+	searchCandidates,
+	verdict,
+	webMeme,
+} from "./search.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
 	Concept,
@@ -153,13 +161,24 @@ function readState(file: string): Stored {
 	};
 }
 
-export function activate(ctx: PluginBackendContext): () => void {
+export interface BackendOptions {
+	/** Builds the search agent from the learner's settings. Without one, web search
+	 * is skipped and the plugin generates. The host supplies the provider. */
+	createSearchAgent?: (settings: Settings) => SearchAgent | null;
+}
+
+export function activate(
+	ctx: PluginBackendContext,
+	options: BackendOptions = {},
+): () => void {
 	const file = path.join(ctx.dataDirectory, STATE_FILE);
 	let state = readState(file);
 	let disposed = false;
 	let generating = false;
 	/** Memes the current model could not template; not retried until the next activation. */
 	const unusable = new Set<string>();
+	/** The web meme shown last; its image is served by `get-image`. */
+	const webFound = new Map<string, Meme>();
 
 	const alive = () => {
 		if (disposed || ctx.signal.aborted)
@@ -419,6 +438,63 @@ export function activate(ctx: PluginBackendContext): () => void {
 		ctx.events.emit(STAGE_TOPIC, { requestId: stageFor, stage: name });
 	};
 
+	/** Web search, when on and an agent is configured. Null means: generate instead.
+	 * Each prefiltered hit is judged by the model (safety, relevance, accuracy) and its
+	 * image must load; any failure rejects that hit (fail closed) and tries the next. */
+	async function webResult(
+		concept: Concept,
+		exclude: string | undefined,
+	): Promise<GeneratedMeme | null> {
+		const { webSearch, searchAgent } = state.settings;
+		if (!webSearch || !searchAgent) return null;
+		const agent = options.createSearchAgent?.(state.settings);
+		if (!agent) return null;
+		const hits = await searchCandidates(agent, concept, ctx.signal);
+		alive();
+		for (const hit of hits) {
+			const meme = webMeme(hit);
+			if (meme.id === exclude) continue;
+			let match: "answer" | "related" | null;
+			try {
+				const model = await resolveModel();
+				const judgement = await ask(
+					model,
+					judgeRequest(hit, concept),
+					parseJudgement,
+				);
+				match = verdict(hit, judgement);
+				// Never show a credit-only card: the image must load before the meme is offered.
+				if (match) await loadImage(meme, ctx.dataDirectory, ctx.signal);
+			} catch {
+				match = null;
+			}
+			alive();
+			if (!match) continue;
+			webFound.clear();
+			webFound.set(meme.id, meme);
+			return {
+				meme: {
+					id: meme.id,
+					origin: "web",
+					name: meme.name,
+					source: meme.source,
+					credit: meme.credit,
+					boxes: [],
+					hasImage: true,
+				},
+				webMatch: match,
+				concept,
+				originalCaption: [],
+				templateLines: [],
+				lines: [],
+				values: {},
+				emphasis: null,
+				fact: "",
+			};
+		}
+		return null;
+	}
+
 	async function generate(input: unknown): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
@@ -485,6 +561,10 @@ export function activate(ctx: PluginBackendContext): () => void {
 				reused: true,
 			};
 		}
+
+		// Source 4 of the README: an existing meme found on the web beats generating one.
+		const web = await webResult(concept, exclude);
+		if (web) return web;
 
 		const model = await resolveModel();
 		if (!memes.length)
@@ -655,7 +735,8 @@ export function activate(ctx: PluginBackendContext): () => void {
 			const id = object(input).id;
 			const meme =
 				typeof id === "string"
-					? pool().memes.find((candidate) => candidate.id === id)
+					? (pool().memes.find((candidate) => candidate.id === id) ??
+						webFound.get(id))
 					: undefined;
 			if (!meme) throw new Error("Unknown meme.");
 			const image = await loadImage(

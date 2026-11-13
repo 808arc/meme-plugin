@@ -40,7 +40,7 @@ export function defaultBoxes(count: number): Box[] {
 	}));
 }
 
-/** Dated or weak templates are left out unless `includeHidden` is set. */
+/** Templates hidden by CATALOGUE_TAGS (today: weak ones) are left out unless `includeHidden` is set. */
 export function memegenMemes(
 	imageBaseUrl: string,
 	{ includeHidden = false }: { includeHidden?: boolean } = {},

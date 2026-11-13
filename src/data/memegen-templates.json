@@ -90,7 +90,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "absurd",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -170,7 +170,7 @@
 			"tags": {
 				"structure": "setup-punchline",
 				"tone": "deadpan",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -1366,7 +1366,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -1578,7 +1578,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "absurd",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -1618,7 +1618,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -1786,7 +1786,7 @@
 			"tags": {
 				"structure": "escalation",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -2134,7 +2134,7 @@
 			"tags": {
 				"structure": "contrast",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -2266,7 +2266,7 @@
 			"tags": {
 				"structure": "reaction",
 				"tone": "absurd",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -2346,7 +2346,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -2638,7 +2638,7 @@
 			"tags": {
 				"structure": "setup-punchline",
 				"tone": "deadpan",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -2926,7 +2926,7 @@
 			"tags": {
 				"structure": "reaction",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -3046,7 +3046,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -3258,7 +3258,7 @@
 			"tags": {
 				"structure": "reaction",
 				"tone": "deadpan",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -3298,7 +3298,7 @@
 			"tags": {
 				"structure": "setup-punchline",
 				"tone": "self-deprecating",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -3442,7 +3442,7 @@
 			"tags": {
 				"structure": "setup-punchline",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -3758,7 +3758,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "deadpan",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -3850,7 +3850,7 @@
 			"tags": {
 				"structure": "contrast",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -4170,7 +4170,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -4210,7 +4210,7 @@
 			"tags": {
 				"structure": "setup-punchline",
 				"tone": "deadpan",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -5074,7 +5074,7 @@
 			"tags": {
 				"structure": "reaction",
 				"tone": "absurd",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -5310,7 +5310,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -5350,7 +5350,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -5390,7 +5390,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -5678,7 +5678,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "self-deprecating",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -5810,7 +5810,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "deadpan",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -5890,7 +5890,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -6202,7 +6202,7 @@
 			"tags": {
 				"structure": "setup-punchline",
 				"tone": "absurd",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -6594,7 +6594,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "deadpan",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -7014,7 +7014,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "self-deprecating",
-				"dated": true,
+				"dated": false,
 				"weak": true,
 				"source": "manual-rule"
 			}
@@ -7054,7 +7054,7 @@
 			"tags": {
 				"structure": "reaction",
 				"tone": "absurd",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -7226,7 +7226,7 @@
 			"tags": {
 				"structure": "contrast",
 				"tone": "self-deprecating",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -7426,7 +7426,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -7694,7 +7694,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "absurd",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -7734,7 +7734,7 @@
 			"tags": {
 				"structure": "contrast",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -7810,7 +7810,7 @@
 			"tags": {
 				"structure": "setup-punchline",
 				"tone": "deadpan",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -8138,7 +8138,7 @@
 			"tags": {
 				"structure": "setup-punchline",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -8702,7 +8702,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -8862,7 +8862,7 @@
 			"tags": {
 				"structure": "setup-punchline",
 				"tone": "sarcastic",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}
@@ -8970,7 +8970,7 @@
 			"tags": {
 				"structure": "catchphrase",
 				"tone": "playful",
-				"dated": true,
+				"dated": false,
 				"weak": false,
 				"source": "manual-rule"
 			}

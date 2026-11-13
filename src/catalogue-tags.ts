@@ -5,8 +5,10 @@
  * so a person can review and change it. `scripts/sync-memegen.mjs` keeps these tags
  * when it regenerates the file.
  *
- * Default hiding: a template with `dated` or `weak` set is left out of the pool unless
- * the caller asks for hidden templates too. Untagged templates stay in. */
+ * Default hiding follows CATALOGUE_TAGS in src/config.ts: today only `weak` templates
+ * leave the pool. `dated` is data for ranking (see isDated). Untagged templates stay in. */
+
+import { CATALOGUE_TAGS } from "./config.ts";
 
 /** How the joke is built, from the template's name and caption. */
 export const STRUCTURES = [
@@ -40,7 +42,9 @@ export type Tone = (typeof TONES)[number];
 export interface TemplateTags {
 	structure: Structure;
 	tone: Tone;
-	/** Tied to a moment, event or meme wave from roughly a decade ago or more. */
+	/** Recognition has faded: tied to a past event, person or meme wave that most people
+	 * no longer place. Not about age: old classics still widely recognised (Drake,
+	 * Distracted Boyfriend, This is Fine) are not dated. */
 	dated: boolean;
 	/** The frame is too thin to reuse for a learning joke. */
 	weak: boolean;
@@ -60,7 +64,16 @@ export function isTemplateTags(value: unknown): value is TemplateTags {
 	);
 }
 
+/** True when recognition of the template has faded. A ranking signal, not a filter. */
+export function isDated(tags: TemplateTags | undefined): boolean {
+	return Boolean(tags?.dated);
+}
+
 /** True when the default pool should leave this template out. */
-export function hiddenByDefault(tags: TemplateTags | undefined): boolean {
-	return Boolean(tags && (tags.dated || tags.weak));
+export function hiddenByDefault(
+	tags: TemplateTags | undefined,
+	rules: { hideWeak: boolean; hideDated: boolean } = CATALOGUE_TAGS,
+): boolean {
+	if (!tags) return false;
+	return (rules.hideWeak && tags.weak) || (rules.hideDated && tags.dated);
 }

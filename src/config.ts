@@ -128,3 +128,19 @@ export const BUTTONLESS = Object.freeze({
 	/** Questions already handled, kept so none gets a second automatic meme. Oldest drop first. */
 	rememberedQuestions: 500,
 });
+
+// #31 tavily search
+/** Tavily search provider (src/tavily.ts). The key is read from the environment only. */
+export const TAVILY = Object.freeze({
+	/** Environment variable holding the API key. Never stored, logged or echoed. */
+	keyEnv: "TAVILY_API_KEY",
+	endpoint: "https://api.tavily.com/search",
+	/** Whole request, including reading the reply. Slower replies count as no hit. */
+	timeoutMs: 8000,
+	/** Results asked from Tavily per query. */
+	maxResults: 10,
+	/** Longest query text sent to Tavily, in characters. */
+	maxQueryLength: 300,
+	/** Most images mapped to hits per reply. */
+	maxImages: 10,
+});

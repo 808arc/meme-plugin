@@ -449,6 +449,7 @@ function mountSurface(
 function settingsRows(
 	settings: Settings,
 	bundled: number,
+	keyFound: boolean,
 	save: (patch: Partial<Settings>) => Promise<void>,
 ): PluginSettingsRow[] {
 	return [
@@ -512,12 +513,31 @@ function settingsRows(
 			key: "webSearch",
 			label: "Search the web for memes",
 			description: `${
-				settings.webSearch && !settings.searchAgent
-					? "On, but needs a search agent: choose one below. Until then nothing is searched. "
+				settings.webSearch &&
+				settings.searchProvider === "none" &&
+				!settings.searchAgent
+					? "On, but needs a search provider: choose one below. Until then nothing is searched. "
 					: ""
-			}Before generating, look for an existing meme on the web through the search agent below. The concept is sent to that agent and its search providers. Off: local sources and generation only.`,
+			}Before generating, look for an existing meme on the web through the search provider below. The concept is sent to that provider. Off: local sources and generation only.`,
 			value: settings.webSearch,
 			onChange: (webSearch) => save({ webSearch }),
+		},
+		{
+			type: "dropdown",
+			key: "searchProvider",
+			label: "Search provider",
+			description: `${
+				settings.searchProvider === "tavily" && !keyFound
+					? "TAVILY_API_KEY is not set in the environment: nothing is searched. "
+					: ""
+			}Tavily sends the concept to Tavily, which reports no licence, so its results are currently filtered out. Key: the TAVILY_API_KEY environment variable only.`,
+			value: settings.searchProvider,
+			options: [
+				{ value: "none", label: "None" },
+				{ value: "tavily", label: "Tavily" },
+			],
+			onChange: (searchProvider) =>
+				save({ searchProvider: searchProvider as Settings["searchProvider"] }),
 		},
 		{
 			type: "toggle",
@@ -668,7 +688,12 @@ function mountSettings(
 			searchPicker.update({ value: state.settings.searchAgent ?? undefined });
 			useDefault.update({ disabled: !state.settings.model });
 			rows.update({
-				rows: settingsRows(state.settings, state.pool.memegen, save),
+				rows: settingsRows(
+					state.settings,
+					state.pool.memegen,
+					state.searchKeyFound,
+					save,
+				),
 			});
 			summary.textContent = `Pool: ${state.pool.memegen} bundled and ${state.pool.custom} custom memes, ${state.pool.coolingDown} cooling down. Custom memes are read from ${state.customFolder}.`;
 			problems.replaceChildren(
@@ -708,7 +733,14 @@ function mountSettings(
 		);
 		const rows = ctx.ui.mountSettingsRows(
 			rowsSlot,
-			{ rows: settingsRows(state.settings, state.pool.memegen, save) },
+			{
+				rows: settingsRows(
+					state.settings,
+					state.pool.memegen,
+					state.searchKeyFound,
+					save,
+				),
+			},
 			{ signal },
 		);
 		ctx.ui.mountButton(

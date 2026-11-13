@@ -4,6 +4,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { isMissingFile } from "./fs-errors.ts";
 import { CUSTOM_IMAGES, IMAGE_FILE } from "./library.ts";
 import type { Meme, MemeImage } from "./types.ts";
 
@@ -81,8 +82,7 @@ export async function loadImage(
 	try {
 		return encode(readBounded(file));
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-			fs.rmSync(file, { force: true });
+		if (!isMissingFile(error)) fs.rmSync(file, { force: true });
 	}
 	const bytes = await download(meme.image, signal);
 	const image = encode(bytes);

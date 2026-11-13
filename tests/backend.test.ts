@@ -141,12 +141,15 @@ function fixture(
 					const scripted = options.reply
 						? await options.reply(request, requests.length)
 						: {};
+					const system = request.context.systemPrompt!;
 					const text =
 						scripted.text ??
 						JSON.stringify(
-							request.context.systemPrompt!.startsWith("You turn the caption")
-								? templates[memeOf(request)]
-								: fillings[memeOf(request)],
+							system.startsWith("You choose which meme")
+								? { choice: 1 }
+								: system.startsWith("You turn the caption")
+									? templates[memeOf(request)]
+									: fillings[memeOf(request)],
 						);
 					return {
 						role: "assistant",
@@ -271,6 +274,65 @@ test("memes rotate: a used meme is skipped while another is eligible", async (t)
 	assert.equal((await call<PluginState>("get-state")).pool.coolingDown, 0);
 });
 
+test("the model picks a fitting meme among those not cooling down, and the joke is asked for", async (t) => {
+	const f = fixture(t, {
+		reply: (request) => {
+			if (!request.context.systemPrompt!.startsWith("You choose which meme"))
+				return {};
+			const listed = String(request.context.messages[0]!.content)
+				.split("\n")
+				.filter((line) => /^\d+\. /.test(line));
+			const choice = listed.findIndex((line) => line.includes("Two panel")) + 1;
+			return { text: JSON.stringify({ choice }) };
+		},
+	});
+	const { call } = f.start();
+	await call("save-settings", offline);
+	const first = await call<GeneratedMeme>("generate", {
+		prompt: "What is CUDA?",
+	});
+	assert.equal(first.meme.id, "custom:two-panel", "the model's choice is used");
+	const pick = f.requests[0]!;
+	assert.match(pick.context.systemPrompt!, /"choice"/);
+	assert.match(
+		String(pick.context.messages[0]!.content),
+		/Proud speech: She fixed the printer/,
+	);
+	assert.match(f.requests[2]!.context.systemPrompt!, /funny/);
+
+	// The meme cooling down is filtered out before the model sees the list: nothing to pick.
+	const second = await call<GeneratedMeme>("generate", {
+		prompt: "What is CUDA?",
+	});
+	assert.equal(second.meme.id, "custom:proud-speech");
+	assert.equal(
+		f.requests.filter((r) => r.context.systemPrompt!.startsWith("You choose"))
+			.length,
+		1,
+	);
+});
+
+test("an unusable pick falls back to a random meme that is not cooling down", async (t) => {
+	const f = fixture(t, {
+		reply: (request) =>
+			request.context.systemPrompt!.startsWith("You choose")
+				? { text: '{"choice": 9}' }
+				: {},
+	});
+	const { call } = f.start();
+	await call("save-settings", offline);
+	const meme = await call<GeneratedMeme>("generate", {
+		prompt: "What is CUDA?",
+	});
+	assert.ok(["custom:proud-speech", "custom:two-panel"].includes(meme.meme.id));
+	assert.equal(
+		f.requests.filter((r) => r.context.systemPrompt!.startsWith("You choose"))
+			.length,
+		2,
+		"one correction, then the fallback",
+	);
+});
+
 test("an emphasis is dropped when the setting is off", async (t) => {
 	const f = fixture(t, { memes: [custom[0]] });
 	const { call } = f.start();
@@ -335,7 +397,9 @@ test("a rejected reply gets one correction, then the meme is abandoned for anoth
 	);
 	assert.equal(
 		stubborn.requests.filter(
-			(request) => stubborn.memeOf(request) === "Proud speech",
+			(request) =>
+				request.context.systemPrompt!.startsWith("You turn the caption") &&
+				stubborn.memeOf(request) === "Proud speech",
 		).length,
 		2,
 		"an untemplatable meme is not paid for again",
@@ -363,10 +427,11 @@ test("model selection is explicit and failures are reported, not hidden", async 
 	await a.call<GeneratedMeme>("generate", { prompt: "x" });
 	assert.deepEqual(none.requests[0]!.model, other);
 	await a.call("save-settings", { model: { provider: "fixture", id: "gone" } });
+	const sent = none.requests.length;
 	await assert.rejects(a.call("generate", { prompt: "x" }), /not available/);
 	assert.equal(
 		none.requests.length,
-		2,
+		sent,
 		"no request is sent to an unavailable model",
 	);
 

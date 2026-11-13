@@ -34,6 +34,29 @@ export function coolingDown(
 	return !!entry && entry.dueAt > now;
 }
 
+/** Up to `limit` memes for the model to choose from: the ones not cooling down, in
+ * random order. When the whole pool is cooling down, the ones due soonest (as pickMeme). */
+export function shortlist(
+	ids: readonly string[],
+	usage: Readonly<Record<string, Usage>>,
+	now: number,
+	limit: number,
+	random: () => number = Math.random,
+): string[] {
+	if (!ids.length) return [];
+	let pool = ids.filter((id) => !coolingDown(usage, id, now));
+	if (!pool.length) {
+		const soonest = Math.min(...ids.map((id) => usage[id]!.dueAt));
+		pool = ids.filter((id) => usage[id]!.dueAt === soonest);
+	}
+	const chosen = [...pool];
+	for (let i = 0; i < chosen.length - 1 && i < limit; i++) {
+		const j = i + Math.floor(random() * (chosen.length - i));
+		[chosen[i], chosen[j]] = [chosen[j]!, chosen[i]!];
+	}
+	return chosen.slice(0, limit);
+}
+
 /** A uniformly random meme that is not cooling down. When the whole pool is cooling
  * down, the one that becomes eligible soonest: the pool never runs dry. */
 export function pickMeme(

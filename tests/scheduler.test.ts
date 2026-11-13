@@ -6,6 +6,7 @@ import {
 	MAX_COOLDOWN_DAYS,
 	pickMeme,
 	recordUse,
+	shortlist,
 } from "../src/scheduler.ts";
 import type { Usage } from "../src/types.ts";
 
@@ -67,4 +68,30 @@ test("an exhausted pool falls back to the meme that is due soonest", () => {
 		"b",
 	);
 	assert.equal(pickMeme([], usage, 100), undefined);
+});
+
+test("the shortlist offers only memes that are not cooling down, up to the limit", () => {
+	const usage: Record<string, Usage> = {
+		a: { uses: 1, lastUsedAt: 0, dueAt: 900 },
+	};
+	assert.deepEqual(shortlist(["a", "b", "c"], usage, 100, 20, () => 0).sort(), [
+		"b",
+		"c",
+	]);
+	assert.equal(shortlist(["a", "b", "c"], usage, 100, 1, () => 0).length, 1);
+	// Whole pool cooling down: only the ones due soonest are offered.
+	assert.deepEqual(
+		shortlist(
+			["a", "b", "c"],
+			{
+				a: { uses: 2, lastUsedAt: 0, dueAt: 900 },
+				b: { uses: 1, lastUsedAt: 0, dueAt: 500 },
+				c: { uses: 1, lastUsedAt: 0, dueAt: 500 },
+			},
+			100,
+			20,
+		).sort(),
+		["b", "c"],
+	);
+	assert.deepEqual(shortlist([], usage, 100, 20), []);
 });

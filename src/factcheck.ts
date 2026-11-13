@@ -4,8 +4,6 @@ import type { ModelRequest } from "./prompts.ts";
 import { normalize } from "./template.ts";
 import type { Concept, ConceptAnswer } from "./types.ts";
 
-/** Fill-and-check rounds per meme before giving up: a wrong meme is never shown. */
-export const MAX_FACT_ATTEMPTS = 3;
 const MAX_LABEL_LENGTH = 200;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

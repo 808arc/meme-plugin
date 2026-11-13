@@ -8,9 +8,9 @@ import type {
 	PluginModelSpec,
 } from "learnharness-plugin-api";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
+import { FACT_CHECK } from "./config.ts";
 import {
 	agreementRequest,
-	MAX_FACT_ATTEMPTS,
 	parseAgreement,
 	parseAnswer,
 	quickAgreement,
@@ -315,10 +315,8 @@ export function activate(ctx: PluginBackendContext): () => void {
 					parseAgreement,
 				));
 			if (verdict) return filling;
-			if (attempt >= MAX_FACT_ATTEMPTS)
-				throw new Error(
-					"No caption matched the question's answer, so no meme was shown. Try again.",
-				);
+			if (attempt >= FACT_CHECK.MAX_FACT_ATTEMPTS)
+				throw new Error(FACT_CHECK.UNRELIABLE_MESSAGE);
 			avoid = filling.fact;
 		}
 	}

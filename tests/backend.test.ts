@@ -9,7 +9,7 @@ import type {
 	PluginInferenceRequest,
 } from "learnharness-plugin-api";
 import { activate } from "../src/backend.ts";
-import { MAX_FACT_ATTEMPTS } from "../src/factcheck.ts";
+import { FACT_CHECK } from "../src/config.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
 import type { GeneratedMeme, MemeImage, PluginState } from "../src/types.ts";
 
@@ -402,14 +402,13 @@ test("when no caption agrees, no meme is shown and nothing is used up", async (t
 	});
 	const { call } = f.start();
 	await call("save-settings", offline);
-	await assert.rejects(
-		call("generate", { prompt: "Who backed CUDA?" }),
-		/no meme was shown/,
-	);
+	await assert.rejects(call("generate", { prompt: "Who backed CUDA?" }), {
+		message: FACT_CHECK.UNRELIABLE_MESSAGE,
+	});
 	const fills = f.requests.filter((request) =>
 		request.context.systemPrompt!.startsWith("You write the caption"),
 	);
-	assert.equal(fills.length, MAX_FACT_ATTEMPTS);
+	assert.equal(fills.length, FACT_CHECK.MAX_FACT_ATTEMPTS);
 	assert.deepEqual(f.stored().usage, {});
 });
 

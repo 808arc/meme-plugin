@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { FACT_CHECK } from "../src/config.ts";
 import {
 	agreementRequest,
 	parseAgreement,
@@ -59,4 +60,9 @@ test("the answer key from the frontend is validated and malformed keys are dropp
 	assert.equal(parseAnswer({ correct: ["a"], others: "b" }), undefined);
 	assert.equal(parseAnswer({ correct: ["a", ""], others: [] }), undefined);
 	assert.equal(parseAnswer(["a"]), undefined);
+});
+
+test("fact-check settings are frozen", () => {
+	assert.ok(Object.isFrozen(FACT_CHECK));
+	assert.ok(FACT_CHECK.MAX_FACT_ATTEMPTS >= 1);
 });

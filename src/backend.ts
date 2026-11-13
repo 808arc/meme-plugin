@@ -19,7 +19,14 @@ import {
 } from "./prompts.ts";
 import { coolingDown, pickMeme, recordUse } from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
-import { findWebMeme, type SearchAgent } from "./search.ts";
+import {
+	judgeRequest,
+	parseJudgement,
+	type SearchAgent,
+	searchCandidates,
+	verdict,
+	webMeme,
+} from "./search.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
 	Concept,
@@ -289,7 +296,9 @@ export function activate(
 		return template;
 	}
 
-	/** Web search, when on and an agent is configured. Null means: generate instead. */
+	/** Web search, when on and an agent is configured. Null means: generate instead.
+	 * Each prefiltered hit is judged by the model (safety, relevance, accuracy) and its
+	 * image must load; any failure rejects that hit (fail closed) and tries the next. */
 	async function webResult(
 		concept: Concept,
 		exclude: string | undefined,
@@ -298,29 +307,50 @@ export function activate(
 		if (!webSearch || !searchAgent) return null;
 		const agent = options.createSearchAgent?.(state.settings);
 		if (!agent) return null;
-		const meme = await findWebMeme(agent, concept, ctx.signal);
+		const hits = await searchCandidates(agent, concept, ctx.signal);
 		alive();
-		if (!meme || meme.id === exclude) return null;
-		webFound.clear();
-		webFound.set(meme.id, meme);
-		return {
-			meme: {
-				id: meme.id,
-				origin: "web",
-				name: meme.name,
-				source: meme.source,
-				credit: meme.credit,
-				boxes: [],
-				hasImage: true,
-			},
-			concept,
-			originalCaption: [],
-			templateLines: [],
-			lines: [],
-			values: {},
-			emphasis: null,
-			fact: "",
-		};
+		for (const hit of hits) {
+			const meme = webMeme(hit);
+			if (meme.id === exclude) continue;
+			let match: "answer" | "related" | null;
+			try {
+				const model = await resolveModel();
+				const judgement = await ask(
+					model,
+					judgeRequest(hit, concept),
+					parseJudgement,
+				);
+				match = verdict(hit, judgement);
+				// Never show a credit-only card: the image must load before the meme is offered.
+				if (match) await loadImage(meme, ctx.dataDirectory, ctx.signal);
+			} catch {
+				match = null;
+			}
+			alive();
+			if (!match) continue;
+			webFound.clear();
+			webFound.set(meme.id, meme);
+			return {
+				meme: {
+					id: meme.id,
+					origin: "web",
+					name: meme.name,
+					source: meme.source,
+					credit: meme.credit,
+					boxes: [],
+					hasImage: true,
+				},
+				webMatch: match,
+				concept,
+				originalCaption: [],
+				templateLines: [],
+				lines: [],
+				values: {},
+				emphasis: null,
+				fact: "",
+			};
+		}
+		return null;
 	}
 
 	async function generate(input: unknown): Promise<GeneratedMeme> {

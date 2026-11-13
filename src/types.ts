@@ -72,6 +72,9 @@ export interface GeneratedMeme {
 	meme: Pick<Meme, "id" | "origin" | "name" | "source" | "credit" | "boxes"> & {
 		hasImage: boolean;
 	};
+	/** Web memes only: "answer" when its source text was checked against the concept,
+	 * "related" when there was no text to check. */
+	webMatch?: "answer" | "related";
 	concept: Concept;
 	originalCaption: string[];
 	templateLines: string[];

@@ -73,7 +73,10 @@ function mountSurface(
 		clear();
 		result = next;
 		unmountMeme = mountMeme(body, next, image);
-		fact.textContent = next.fact;
+		fact.textContent =
+			next.webMatch === "related"
+				? "Related meme: found on the web, not checked as an answer."
+				: next.fact;
 		credit.append(`Meme: ${next.meme.name}`);
 		if (next.meme.credit) credit.append(` · Credit: ${next.meme.credit}`);
 		if (next.meme.source && /^https?:\/\//.test(next.meme.source)) {
@@ -222,8 +225,11 @@ function settingsRows(
 			type: "toggle",
 			key: "webSearch",
 			label: "Search the web for memes",
-			description:
-				"Before generating, look for an existing meme on the web through the search agent below. The concept is sent to that agent and its search providers. Off: local sources and generation only.",
+			description: `${
+				settings.webSearch && !settings.searchAgent
+					? "On, but needs a search agent: choose one below. Until then nothing is searched. "
+					: ""
+			}Before generating, look for an existing meme on the web through the search agent below. The concept is sent to that agent and its search providers. Off: local sources and generation only.`,
 			value: settings.webSearch,
 			onChange: (webSearch) => save({ webSearch }),
 		},

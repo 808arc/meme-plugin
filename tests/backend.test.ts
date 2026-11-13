@@ -654,61 +654,155 @@ test("the bundled catalogue is well formed", () => {
 	assert.ok(memegenMemes("").every((meme) => meme.image === ""));
 });
 
+type Judge = { safe?: boolean; relevant?: boolean; accurate?: boolean | null };
+async function webFixture(
+	t: TestContext,
+	hits: Record<string, unknown>[],
+	judge: (user: string) => Judge | "error" = () => ({}),
+) {
+	const server = http.createServer((request, response) => {
+		if (request.url === "/ok.png") {
+			response.writeHead(200, { "content-type": "image/png" });
+			response.end(PNG);
+		} else {
+			response.writeHead(404);
+			response.end();
+		}
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.close());
+	const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+	const searches: unknown[] = [];
+	const f = fixture(t, {
+		memes: [custom[0]],
+		reply: (request) => {
+			if (!request.context.systemPrompt!.startsWith("You judge")) return {};
+			const answer = judge(String(request.context.messages[0]!.content));
+			if (answer === "error")
+				return { stopReason: "error", errorMessage: "judge down" };
+			return {
+				text: JSON.stringify({
+					safe: true,
+					relevant: true,
+					accurate: null,
+					...answer,
+				}),
+			};
+		},
+	});
+	const web = f.start({
+		createSearchAgent: () => ({
+			find: async (request) => {
+				searches.push(request);
+				return hits.map((hit) => ({
+					...hit,
+					image: String(hit.image).replace("BASE", base),
+				})) as never;
+			},
+		}),
+	});
+	await web.call("save-settings", { useMemegen: false, searchAgent: other });
+	const judged = () =>
+		f.requests.filter((request) =>
+			request.context.systemPrompt!.startsWith("You judge"),
+		).length;
+	return { ...f, ...web, searches, judged };
+}
 const hit = {
-	image: "https://images.example.test/drake.jpg",
+	image: "BASE/ok.png",
 	name: "Drake approving",
 	terms: ["cuda"],
 	source: "https://memes.example.test/drake",
 	credit: "Example Archive",
-	license: "CC-BY-4.0",
+	license: "CC BY-SA 4.0",
 };
-const webSearch = (hits: unknown[]) => ({
-	createSearchAgent: () => ({
-		find: async () => hits as never,
-	}),
-});
+const ask = { prompt: "Who backed CUDA?" };
 
-test("web search: an acceptable hit is shown with credit and source, without generating", async (t) => {
-	const f = fixture(t, { memes: [custom[0]] });
-	const { call } = f.start(webSearch([hit]));
-	await call("save-settings", { useMemegen: false, searchAgent: other });
-	const found = await call<GeneratedMeme>("generate", {
-		prompt: "Who backed CUDA?",
-	});
+test("web search: a judged hit with source text is shown as the answer, with credit", async (t) => {
+	const w = await webFixture(
+		t,
+		[{ ...hit, title: "NVIDIA backed CUDA" }],
+		() => ({
+			accurate: true,
+		}),
+	);
+	const found = await w.call<GeneratedMeme>("generate", ask);
 	assert.equal(found.meme.origin, "web");
+	assert.equal(found.webMatch, "answer");
 	assert.equal(found.meme.credit, "Example Archive");
 	assert.equal(found.meme.source, "https://memes.example.test/drake");
 	assert.deepEqual(found.lines, []);
-	assert.equal(f.requests.length, 0, "no model call when a web meme is found");
+	assert.equal((w.searches[0] as { safeSearch: boolean }).safeSearch, true);
+	assert.equal(w.requests.length, 1, "one judge call, no caption generation");
+	assert.deepEqual(
+		await w.call<MemeImage>("get-image", { id: found.meme.id }),
+		{
+			mimeType: "image/png",
+			data: PNG.toString("base64"),
+		},
+	);
 });
 
-test("web search: off, unconfigured, or nothing relevant falls back to generation", async (t) => {
-	const f = fixture(t, { memes: [custom[0]] });
-	const off = f.start(webSearch([hit]));
-	await off.call("save-settings", {
-		useMemegen: false,
-		searchAgent: other,
-		webSearch: false,
-	});
-	const generated = await off.call<GeneratedMeme>("generate", {
-		prompt: "Who backed CUDA?",
-	});
-	assert.equal(generated.meme.origin, "custom");
+test("web search: without source text the meme is labelled related", async (t) => {
+	const w = await webFixture(t, [hit]);
+	const found = await w.call<GeneratedMeme>("generate", ask);
+	assert.equal(found.webMatch, "related");
+});
 
-	const unrelated = f.start(
-		webSearch([
-			{ ...hit, terms: ["weather"] },
-			{ ...hit, license: "" },
-		]),
+test("web search: a broken image falls back to the next hit, then to generation", async (t) => {
+	const broken = { ...hit, image: "BASE/missing.png", name: "Broken" };
+	const next = await webFixture(t, [broken, hit]);
+	assert.equal(
+		(await next.call<GeneratedMeme>("generate", ask)).meme.name,
+		"Drake approving",
 	);
-	await unrelated.call("save-settings", {
-		useMemegen: false,
-		searchAgent: other,
-	});
-	const after = await unrelated.call<GeneratedMeme>("generate", {
-		prompt: "Who backed CUDA?",
-	});
-	assert.equal(after.meme.origin, "custom");
+	const none = await webFixture(t, [broken]);
+	assert.equal(
+		(await none.call<GeneratedMeme>("generate", ask)).meme.origin,
+		"custom",
+	);
+});
+
+test("web search: unsafe, irrelevant, inaccurate or failed judgements reject the hit", async (t) => {
+	for (const judge of [
+		() => ({ safe: false }),
+		() => ({ relevant: false }),
+		() => ({ accurate: false }),
+		() => "error" as const,
+	]) {
+		const w = await webFixture(t, [{ ...hit, text: "CUDA" }], judge);
+		const result = await w.call<GeneratedMeme>("generate", ask);
+		assert.equal(result.meme.origin, "custom");
+		assert.ok(w.judged() >= 1);
+	}
+});
+
+test("web search: off, unconfigured, NC licence or no term match skip the judge", async (t) => {
+	const off = await webFixture(t, [hit]);
+	await off.call("save-settings", { webSearch: false });
+	assert.equal(
+		(await off.call<GeneratedMeme>("generate", ask)).meme.origin,
+		"custom",
+	);
+	assert.equal(off.searches.length, 0);
+
+	const unset = await webFixture(t, [hit]);
+	await unset.call("save-settings", { searchAgent: null });
+	assert.equal(
+		(await unset.call<GeneratedMeme>("generate", ask)).meme.origin,
+		"custom",
+	);
+	assert.equal(unset.searches.length, 0);
+
+	const filtered = await webFixture(t, [
+		{ ...hit, license: "CC BY-NC 4.0" },
+		{ ...hit, terms: ["weather"] },
+	]);
+	assert.equal(
+		(await filtered.call<GeneratedMeme>("generate", ask)).meme.origin,
+		"custom",
+	);
+	assert.equal(filtered.judged(), 0);
 });
 
 test("web search settings: the agent is configured by the learner, not hardcoded", async (t) => {

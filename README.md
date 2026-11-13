@@ -89,7 +89,7 @@ replaces only the installed `dist/`.
 | Use the bundled catalogue | on | About 200 image memes from [memegen](https://github.com/jacebrowning/memegen). |
 | Image server | `https://api.memegen.link` | Where blank images come from. A self-hosted memegen works too. Empty: captions only. |
 | Search the web for memes | on | Before generating, look for an existing meme through the search agent. Off: local sources and generation only. |
-| Search agent | none | The model and provider that search uses. Without one, no search runs. |
+| Search agent | none | The model and provider that search uses. Without one, settings show "On, but needs a search agent" and nothing is searched. |
 
 **Reset cooldowns** makes every meme eligible again.
 
@@ -102,7 +102,7 @@ The plugin lets you watch memes during the learning process. Intended sources, i
 1. Earlier memes for the same concept, reused as a limited share of picks so they don't repeat often. Planned ([#9](https://github.com/808arc/meme-plugin/issues/9), [#19](https://github.com/808arc/meme-plugin/issues/19)).
 2. Your own memes (below). Planned ([#21](https://github.com/808arc/meme-plugin/issues/21)).
 3. The bundled catalogue, about 200 classic templates. Shipped. Dated ones to be hidden ([#6](https://github.com/808arc/meme-plugin/issues/6)).
-4. Web search for an existing meme. Planned, on by default, through the search agent you configure ([#11](https://github.com/808arc/meme-plugin/issues/11)).
+4. Web search for an existing meme, on by default, through the search agent you configure. Shipped; needs a search agent configured ([#11](https://github.com/808arc/meme-plugin/issues/11)).
 
 If no relevant meme is found, the plugin generates a new caption straight away. Shipped. Fitting picks planned ([#4](https://github.com/808arc/meme-plugin/issues/4)).
 
@@ -145,7 +145,8 @@ Bad entries skipped, listed in settings. Changes apply next meme; no restart.
 - The image server receives only the meme's id (for example `/images/drake.jpg`), once
   per meme. Images are cached in `data/image-cache/`.
 - Nothing else. Writes only in `data/`. Learning records untouched.
-- Planned: web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme-plugin/issues/11)). A settings switch turns it off.
+- Web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme-plugin/issues/11)). A settings switch turns it off.
+- Loading a web meme's image exposes your IP address to the host of that image.
 
 ## Development
 

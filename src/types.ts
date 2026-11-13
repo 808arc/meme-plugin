@@ -67,7 +67,9 @@ export interface Concept {
 
 /** What the backend returns for one generated meme. */
 export interface GeneratedMeme {
-	meme: Pick<Meme, "id" | "origin" | "name" | "source" | "boxes"> & { hasImage: boolean };
+	meme: Pick<Meme, "id" | "origin" | "name" | "source" | "boxes"> & {
+		hasImage: boolean;
+	};
 	concept: Concept;
 	originalCaption: string[];
 	templateLines: string[];

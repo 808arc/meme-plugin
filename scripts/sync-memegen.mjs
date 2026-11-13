@@ -22,21 +22,37 @@ if (!checkout) {
 	process.exit(1);
 }
 const templatesDirectory = path.join(path.resolve(checkout), "templates");
-const number = (value, fallback) => (typeof value === "number" && Number.isFinite(value) ? value : fallback);
+const number = (value, fallback) =>
+	typeof value === "number" && Number.isFinite(value) ? value : fallback;
 const clamp = (value) => Math.min(1, Math.max(0, value));
 
 const templates = [];
 const skipped = [];
 for (const id of fs.readdirSync(templatesDirectory).sort()) {
 	// Underscore folders are memegen's own error/test fixtures.
-	if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) { skipped.push(`${id}: not a template id`); continue; }
+	if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
+		skipped.push(`${id}: not a template id`);
+		continue;
+	}
 	const file = path.join(templatesDirectory, id, "config.yml");
-	if (!fs.existsSync(file)) { skipped.push(`${id}: no config.yml`); continue; }
+	if (!fs.existsSync(file)) {
+		skipped.push(`${id}: no config.yml`);
+		continue;
+	}
 	const config = parse(fs.readFileSync(file, "utf8"));
 	const text = Array.isArray(config?.text) ? config.text : [];
-	const example = Array.isArray(config?.example) ? config.example.map((line) => (typeof line === "string" ? line.trim() : "")) : [];
-	const caption = example.slice(0, text.length).map((line) => (line === "_" ? "" : line));
-	if (!caption.some(Boolean)) { skipped.push(`${id}: no example caption`); continue; }
+	const example = Array.isArray(config?.example)
+		? config.example.map((line) =>
+				typeof line === "string" ? line.trim() : "",
+			)
+		: [];
+	const caption = example
+		.slice(0, text.length)
+		.map((line) => (line === "_" ? "" : line));
+	if (!caption.some(Boolean)) {
+		skipped.push(`${id}: no example caption`);
+		continue;
+	}
 	// A caption line that is only shown for part of an animation still reads fine on a still image.
 	const boxes = caption.map((_, index) => {
 		const box = text[index] ?? {};
@@ -47,28 +63,55 @@ for (const id of fs.readdirSync(templatesDirectory).sort()) {
 			h: clamp(number(box.scale_y, 0.2)),
 			angle: number(box.angle, 0),
 			color: typeof box.color === "string" ? box.color : "white",
-			style: ["upper", "lower", "none", "default"].includes(box.style) ? box.style : "none",
+			style: ["upper", "lower", "none", "default"].includes(box.style)
+				? box.style
+				: "none",
 			font: ["thick", "thin", "comic"].includes(box.font) ? box.font : "thick",
-			align: ["left", "center", "right"].includes(box.align) ? box.align : "center",
+			align: ["left", "center", "right"].includes(box.align)
+				? box.align
+				: "center",
 		};
 	});
 	templates.push({
 		id,
-		name: typeof config.name === "string" && config.name.trim() ? config.name.trim() : id,
-		...(typeof config.source === "string" && /^https?:\/\//.test(config.source) ? { source: config.source } : {}),
+		name:
+			typeof config.name === "string" && config.name.trim()
+				? config.name.trim()
+				: id,
+		...(typeof config.source === "string" && /^https?:\/\//.test(config.source)
+			? { source: config.source }
+			: {}),
 		caption,
 		boxes,
 	});
 }
 
 let commit = "unknown";
-try { commit = execFileSync("git", ["-C", path.resolve(checkout), "rev-parse", "HEAD"], { encoding: "utf8" }).trim(); } catch { /* not a git checkout */ }
+try {
+	commit = execFileSync(
+		"git",
+		["-C", path.resolve(checkout), "rev-parse", "HEAD"],
+		{ encoding: "utf8" },
+	).trim();
+} catch {
+	/* not a git checkout */
+}
 const output = path.join(root, "src", "data", "memegen-templates.json");
-fs.writeFileSync(output, JSON.stringify({
-	origin: "https://github.com/jacebrowning/memegen",
-	license: "MIT",
-	commit,
-	templates,
-}, null, "\t") + "\n");
+fs.writeFileSync(
+	output,
+	JSON.stringify(
+		{
+			origin: "https://github.com/jacebrowning/memegen",
+			license: "MIT",
+			commit,
+			templates,
+		},
+		null,
+		"\t",
+	) + "\n",
+);
 console.log(`[sync-memegen] ${templates.length} templates -> ${output}`);
-if (skipped.length) console.log(`[sync-memegen] skipped ${skipped.length}: ${skipped.join("; ")}`);
+if (skipped.length)
+	console.log(
+		`[sync-memegen] skipped ${skipped.length}: ${skipped.join("; ")}`,
+	);

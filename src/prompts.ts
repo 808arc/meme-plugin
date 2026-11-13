@@ -1,16 +1,27 @@
 /** Model-facing wording for steps 3 to 5 of the README. Product text: edit freely.
  * Bump PROMPT_VERSION when the template instructions change so cached templates rebuild. */
-import { MAX_EMPHASIS_LENGTH, MAX_SLOTS, MAX_VALUE_LENGTH, sentences } from "./template.ts";
+import {
+	MAX_EMPHASIS_LENGTH,
+	MAX_SLOTS,
+	MAX_VALUE_LENGTH,
+	sentences,
+} from "./template.ts";
 import type { Concept, Meme, Template } from "./types.ts";
 
 export const PROMPT_VERSION = 1;
 
-export interface ModelRequest { systemPrompt: string; user: string }
+export interface ModelRequest {
+	systemPrompt: string;
+	user: string;
+}
 
-const numbered = (lines: readonly string[]) => lines.map((line, index) => `${index + 1}. ${line || "(empty)"}`).join("\n");
+const numbered = (lines: readonly string[]) =>
+	lines.map((line, index) => `${index + 1}. ${line || "(empty)"}`).join("\n");
 
 /** Step 3: reduce a caption to fixed memetic phrasing plus fillable slots. */
-export function templateRequest(meme: Pick<Meme, "name" | "caption">): ModelRequest {
+export function templateRequest(
+	meme: Pick<Meme, "name" | "caption">,
+): ModelRequest {
 	return {
 		systemPrompt: [
 			"You turn the caption of an image meme into a reusable template.",
@@ -28,7 +39,12 @@ export function templateRequest(meme: Pick<Meme, "name" | "caption">): ModelRequ
 }
 
 /** Steps 4 and 5: fill the slots with facts about the concept, optionally add emphasis. */
-export function fillRequest(input: { meme: Pick<Meme, "name">; template: Template; concept: Concept; emphasis: boolean }): ModelRequest {
+export function fillRequest(input: {
+	meme: Pick<Meme, "name">;
+	template: Template;
+	concept: Concept;
+	emphasis: boolean;
+}): ModelRequest {
 	const { template } = input;
 	const emphasis = input.emphasis
 		? `- You may add one short interjection (at most ${MAX_EMPHASIS_LENGTH} characters) in the character's voice that repeats the key term for emphasis, placed after one of the numbered sentences. Use null when it would not sound right.`
@@ -47,18 +63,28 @@ export function fillRequest(input: { meme: Pick<Meme, "name">; template: Templat
 		].join("\n"),
 		user: [
 			`The learner is being asked:\n${input.concept.prompt}`,
-			input.concept.context ? `Shown with the question:\n${input.concept.context}` : "",
+			input.concept.context
+				? `Shown with the question:\n${input.concept.context}`
+				: "",
 			`Meme: ${input.meme.name}${template.voice ? `\nCharacter voice: ${template.voice}` : ""}`,
 			`Template sentences:\n${numbered(sentences(template).map((sentence) => sentence.text))}`,
 			`Slots:\n${template.slots.map((slot) => `- ${slot.name}: ${slot.hint} (the original meme said "${slot.original}")`).join("\n")}`,
-		].filter(Boolean).join("\n\n"),
+		]
+			.filter(Boolean)
+			.join("\n\n"),
 	};
 }
 
 /** The first complete JSON object in a model reply, tolerating fences and prose around it. */
 export function extractJson(text: string): unknown {
-	for (let start = text.indexOf("{"); start !== -1; start = text.indexOf("{", start + 1)) {
-		let depth = 0, quoted = false, escaped = false;
+	for (
+		let start = text.indexOf("{");
+		start !== -1;
+		start = text.indexOf("{", start + 1)
+	) {
+		let depth = 0,
+			quoted = false,
+			escaped = false;
 		for (let index = start; index < text.length; index++) {
 			const character = text[index]!;
 			if (quoted) {
@@ -68,7 +94,11 @@ export function extractJson(text: string): unknown {
 			} else if (character === '"') quoted = true;
 			else if (character === "{") depth++;
 			else if (character === "}" && --depth === 0) {
-				try { return JSON.parse(text.slice(start, index + 1)); } catch { break; }
+				try {
+					return JSON.parse(text.slice(start, index + 1));
+				} catch {
+					break;
+				}
 			}
 		}
 	}

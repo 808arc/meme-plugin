@@ -3,12 +3,17 @@
 import type { Box, GeneratedMeme, MemeImage } from "./types.ts";
 
 const FONTS: Record<Box["font"], string> = {
-	thick: 'Impact, Haettenschweiler, "Arial Narrow Bold", "Arial Black", sans-serif',
+	thick:
+		'Impact, Haettenschweiler, "Arial Narrow Bold", "Arial Black", sans-serif',
 	thin: "Arial, Helvetica, sans-serif",
 	comic: '"Comic Sans MS", "Comic Neue", cursive, sans-serif',
 };
 
-export function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
+export function element<K extends keyof HTMLElementTagNameMap>(
+	tag: K,
+	className: string,
+	text?: string,
+): HTMLElementTagNameMap[K] {
 	const node = document.createElement(tag);
 	node.className = className;
 	if (text !== undefined) node.textContent = text;
@@ -23,11 +28,16 @@ function styled(text: string, style: Box["style"]): string {
 
 /** Largest font size at which the text stays inside its box. */
 function fit(box: HTMLElement, text: HTMLElement, largest: number): void {
-	let low = 6, high = Math.max(low, largest);
+	let low = 6,
+		high = Math.max(low, largest);
 	for (let step = 0; step < 10; step++) {
 		const size = (low + high) / 2;
 		text.style.fontSize = `${size}px`;
-		if (text.scrollHeight <= box.clientHeight + 1 && text.scrollWidth <= box.clientWidth + 1) low = size;
+		if (
+			text.scrollHeight <= box.clientHeight + 1 &&
+			text.scrollWidth <= box.clientWidth + 1
+		)
+			low = size;
 		else high = size;
 	}
 	text.style.fontSize = `${low}px`;
@@ -35,15 +45,23 @@ function fit(box: HTMLElement, text: HTMLElement, largest: number): void {
 
 /** Mount the meme into `container`; returns cleanup. Without an image the caption
  * is shown as a plain stacked card so the meme still reads. */
-export function mountMeme(container: HTMLElement, result: GeneratedMeme, image: MemeImage | null): () => void {
+export function mountMeme(
+	container: HTMLElement,
+	result: GeneratedMeme,
+	image: MemeImage | null,
+): () => void {
 	const figure = element("figure", "meme-plugin-figure");
-	const stage = element("div", image ? "meme-plugin-stage" : "meme-plugin-stage meme-plugin-stage-text");
+	const stage = element(
+		"div",
+		image ? "meme-plugin-stage" : "meme-plugin-stage meme-plugin-stage-text",
+	);
 	figure.append(stage);
 	container.append(figure);
 	const cleanup: (() => void)[] = [() => figure.remove()];
 
 	if (!image) {
-		for (const line of result.lines) if (line) stage.append(element("p", "meme-plugin-line", line));
+		for (const line of result.lines)
+			if (line) stage.append(element("p", "meme-plugin-line", line));
 		return () => cleanup.forEach((run) => run());
 	}
 
@@ -61,7 +79,13 @@ export function mountMeme(container: HTMLElement, result: GeneratedMeme, image: 
 		box.style.width = `${spec.w * 100}%`;
 		box.style.height = `${spec.h * 100}%`;
 		if (spec.angle) box.style.transform = `rotate(${-spec.angle}deg)`;
-		const text = element("div", spec.color === "black" ? "meme-plugin-text meme-plugin-text-dark" : "meme-plugin-text", styled(line, spec.style));
+		const text = element(
+			"div",
+			spec.color === "black"
+				? "meme-plugin-text meme-plugin-text-dark"
+				: "meme-plugin-text",
+			styled(line, spec.style),
+		);
 		text.style.fontFamily = FONTS[spec.font];
 		text.style.textAlign = spec.align;
 		// Assigning through the style API drops anything that is not a valid color.
@@ -71,7 +95,10 @@ export function mountMeme(container: HTMLElement, result: GeneratedMeme, image: 
 		boxes.push({ box, text, angled: spec.angle !== 0 });
 	});
 	// Same ceiling memegen uses: a ninth of the image height, a quarter for angled boxes.
-	const layout = () => { for (const item of boxes) fit(item.box, item.text, stage.clientHeight / (item.angled ? 4 : 9)); };
+	const layout = () => {
+		for (const item of boxes)
+			fit(item.box, item.text, stage.clientHeight / (item.angled ? 4 : 9));
+	};
 	picture.addEventListener("load", layout);
 	cleanup.push(() => picture.removeEventListener("load", layout));
 	if (typeof ResizeObserver !== "undefined") {

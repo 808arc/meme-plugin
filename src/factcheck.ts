@@ -6,7 +6,8 @@ import type { Concept, ConceptAnswer } from "./types.ts";
 
 const MAX_LABEL_LENGTH = 200;
 
-const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegExp = (text: string) =>
+	text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Whole-word containment on normalized text. */
 function mentions(text: string, label: string): boolean {
@@ -14,7 +15,7 @@ function mentions(text: string, label: string): boolean {
 	return (
 		!!needle &&
 		new RegExp(
-			`(^|[^\\p{L}\\p{N}])${escape(needle)}($|[^\\p{L}\\p{N}])`,
+			`(^|[^\\p{L}\\p{N}])${escapeRegExp(needle)}($|[^\\p{L}\\p{N}])`,
 			"u",
 		).test(text)
 	);

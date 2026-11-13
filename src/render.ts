@@ -109,3 +109,64 @@ export function mountMeme(
 	if (picture.complete) layout();
 	return () => cleanup.forEach((run) => run());
 }
+
+/** Composites the blank image and the caption lines into one PNG, for "Copy image".
+ * Mirrors the on-screen boxes; the caption is drawn, never read from the DOM. */
+export async function memePng(
+	result: GeneratedMeme,
+	image: MemeImage,
+): Promise<Blob> {
+	const picture = new Image();
+	picture.src = `data:${image.mimeType};base64,${image.data}`;
+	await picture.decode();
+	const width = picture.naturalWidth,
+		height = picture.naturalHeight;
+	const canvas = document.createElement("canvas");
+	canvas.width = width;
+	canvas.height = height;
+	const context = canvas.getContext("2d");
+	if (!context) throw new Error("Image copy is not available here.");
+	context.drawImage(picture, 0, 0, width, height);
+	result.lines.forEach((line, index) => {
+		const spec = result.meme.boxes[index];
+		if (!line || !spec) return;
+		const boxWidth = spec.w * width,
+			boxHeight = spec.h * height;
+		const text = styled(line, spec.style);
+		// Largest size that fits the box height and width, as the on-screen fit does.
+		let size = Math.min(boxHeight * 0.9, height / (spec.angle ? 4 : 9));
+		context.font = `${spec.color === "black" ? 400 : 700} ${size}px ${FONTS[spec.font]}`;
+		while (size > 6 && context.measureText(text).width > boxWidth) {
+			size -= 1;
+			context.font = `${spec.color === "black" ? 400 : 700} ${size}px ${FONTS[spec.font]}`;
+		}
+		const pad = boxWidth * 0.04;
+		const anchorX =
+			spec.align === "left"
+				? spec.x * width + pad
+				: spec.align === "right"
+					? (spec.x + spec.w) * width - pad
+					: (spec.x + spec.w / 2) * width;
+		context.save();
+		context.translate(anchorX, (spec.y + spec.h / 2) * height);
+		if (spec.angle) context.rotate((-spec.angle * Math.PI) / 180);
+		context.textAlign = spec.align;
+		context.textBaseline = "middle";
+		context.fillStyle = spec.color;
+		if (spec.color !== "black") {
+			context.strokeStyle = "#000";
+			context.lineWidth = size * 0.08;
+			context.lineJoin = "round";
+			context.strokeText(text, 0, 0);
+		}
+		context.fillText(text, 0, 0);
+		context.restore();
+	});
+	return new Promise((resolve, reject) =>
+		canvas.toBlob(
+			(blob) =>
+				blob ? resolve(blob) : reject(new Error("Could not make the image.")),
+			"image/png",
+		),
+	);
+}

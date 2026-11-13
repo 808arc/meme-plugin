@@ -8,7 +8,7 @@ import {
 } from "./template.ts";
 import type { Concept, Meme, Template } from "./types.ts";
 
-export const PROMPT_VERSION = 1;
+export const PROMPT_VERSION = 3;
 
 export interface ModelRequest {
 	systemPrompt: string;
@@ -17,6 +17,27 @@ export interface ModelRequest {
 
 const numbered = (lines: readonly string[]) =>
 	lines.map((line, index) => `${index + 1}. ${line || "(empty)"}`).join("\n");
+
+/** Step 2: choose, from candidate memes, the one whose joke structure fits the concept. */
+export function pickRequest(
+	concept: Concept,
+	candidates: readonly Pick<Meme, "name" | "caption">[],
+): ModelRequest {
+	return {
+		systemPrompt: [
+			'You choose which meme to use for a study question. Pick the meme whose joke structure fits the concept: a comparison, an escalation, a betrayal, a "nobody: / me:" contrast, and so on.',
+			"Judge each meme by its original caption, which shows the shape of its joke.",
+			'Reply with one JSON object and nothing else: {"choice": number}, where the number is the meme\'s number in the list.',
+		].join("\n"),
+		user: [
+			`The learner is being asked:\n${concept.prompt}`,
+			concept.context ? `Shown with the question:\n${concept.context}` : "",
+			`Memes:\n${numbered(candidates.map((meme) => `${meme.name}: ${meme.caption.join(" / ")}`))}`,
+		]
+			.filter(Boolean)
+			.join("\n\n"),
+	};
+}
 
 /** Step 3: reduce a caption to fixed memetic phrasing plus fillable slots. */
 export function templateRequest(
@@ -44,8 +65,13 @@ export function fillRequest(input: {
 	template: Template;
 	concept: Concept;
 	emphasis: boolean;
+	/** A fact from an earlier attempt that did not agree with the question. */
+	avoid?: string;
 }): ModelRequest {
 	const { template } = input;
+	const answer = input.concept.answer
+		? `The correct answer is: ${input.concept.answer.correct.join(" | ")}. The fact must say so.`
+		: "";
 	const emphasis = input.emphasis
 		? `- You may add one short interjection (at most ${MAX_EMPHASIS_LENGTH} characters) in the character's voice that repeats the key term for emphasis, placed after one of the numbered sentences. Use null when it would not sound right.`
 		: '- Set "emphasis" to null.';
@@ -55,6 +81,7 @@ export function fillRequest(input: {
 			"You are given a meme template with slots. Fill every slot.",
 			"Rules:",
 			"- The filled caption must state true facts that answer the learner's question. Never invent names, dates or numbers. Prefer the single most important fact.",
+			"- Make it funny the way the meme is funny: a setup and punchline, a contrast, or an exaggeration of the fact. A joke must never need a claim that is false or unsupported by the fact; when it would, state the plain fact instead.",
 			`- Each value is a short phrase (at most ${MAX_VALUE_LENGTH} characters) that reads grammatically inside its sentence. Plain text only.`,
 			"- Do not rewrite the fixed words of the template; you only supply slot values.",
 			emphasis,
@@ -65,6 +92,10 @@ export function fillRequest(input: {
 			`The learner is being asked:\n${input.concept.prompt}`,
 			input.concept.context
 				? `Shown with the question:\n${input.concept.context}`
+				: "",
+			answer,
+			input.avoid
+				? `An earlier attempt wrote this fact, which does not agree with the question: "${input.avoid}". Write a fact that does.`
 				: "",
 			`Meme: ${input.meme.name}${template.voice ? `\nCharacter voice: ${template.voice}` : ""}`,
 			`Template sentences:\n${numbered(sentences(template).map((sentence) => sentence.text))}`,

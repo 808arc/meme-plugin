@@ -25,6 +25,23 @@ export function recordUse(
 	return { uses, lastUsedAt: now, dueAt: now + cooldownMs(uses, settings) };
 }
 
+/** "Not this one" (#21): one more use, and at least `rejectCooldownDays` away even
+ * when the normal cooldown is off. */
+export function recordRejection(
+	previous: Usage | undefined,
+	now: number,
+	settings: Pick<
+		Settings,
+		"cooldownDays" | "cooldownGrowth" | "rejectCooldownDays"
+	>,
+): Usage {
+	const use = recordUse(previous, now, settings);
+	return {
+		...use,
+		dueAt: Math.max(use.dueAt, now + settings.rejectCooldownDays * DAY),
+	};
+}
+
 export function coolingDown(
 	usage: Readonly<Record<string, Usage>>,
 	id: string,
@@ -32,6 +49,34 @@ export function coolingDown(
 ): boolean {
 	const entry = usage[id];
 	return !!entry && entry.dueAt > now;
+}
+
+/** Up to `limit` memes for the model to choose from: the ones not cooling down, in
+ * random order. When the whole pool is cooling down, the ones due soonest (as pickMeme). */
+export function shortlist(
+	ids: readonly string[],
+	usage: Readonly<Record<string, Usage>>,
+	now: number,
+	limit: number,
+	random: () => number = Math.random,
+	dated: (id: string) => boolean = () => false,
+): string[] {
+	if (!ids.length) return [];
+	let pool = ids.filter((id) => !coolingDown(usage, id, now));
+	if (!pool.length) {
+		const soonest = Math.min(...ids.map((id) => usage[id]!.dueAt));
+		pool = ids.filter((id) => usage[id]!.dueAt === soonest);
+	}
+	const chosen = [...pool];
+	for (let i = 0; i < chosen.length - 1; i++) {
+		const j = i + Math.floor(random() * (chosen.length - i));
+		[chosen[i], chosen[j]] = [chosen[j]!, chosen[i]!];
+	}
+	// Dated memes (#6) go after the rest: they fill the shortlist only when needed.
+	return [
+		...chosen.filter((id) => !dated(id)),
+		...chosen.filter((id) => dated(id)),
+	].slice(0, limit);
 }
 
 /** A uniformly random meme that is not cooling down. When the whole pool is cooling
@@ -49,4 +94,39 @@ export function pickMeme(
 	if (eligible.length) return at(eligible);
 	const soonest = Math.min(...ids.map((id) => usage[id]!.dueAt));
 	return at(ids.filter((id) => usage[id]!.dueAt === soonest));
+}
+
+/** Source order (#21): `preferred` ids (the learner's own memes) are tried first.
+ * While one of them is out of cooldown, the candidates are only those, with
+ * probability `share`; otherwise all ids. A preference, not a filter: a used
+ * preferred meme cools down like any other, and the rest of the pool takes over. */
+export function preferredPool(
+	ids: readonly string[],
+	preferred: ReadonlySet<string>,
+	usage: Readonly<Record<string, Usage>>,
+	now: number,
+	share: number,
+	random: () => number = Math.random,
+): readonly string[] {
+	const eligible = ids.filter(
+		(id) => preferred.has(id) && !coolingDown(usage, id, now),
+	);
+	return eligible.length && (share >= 1 || random() < share) ? eligible : ids;
+}
+
+/** One random pick over preferredPool (#21). */
+export function pickPreferred(
+	ids: readonly string[],
+	preferred: ReadonlySet<string>,
+	usage: Readonly<Record<string, Usage>>,
+	now: number,
+	share: number,
+	random: () => number = Math.random,
+): string | undefined {
+	return pickMeme(
+		preferredPool(ids, preferred, usage, now, share, random),
+		usage,
+		now,
+		random,
+	);
 }

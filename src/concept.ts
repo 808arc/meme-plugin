@@ -1,7 +1,7 @@
 /** Step 1 of the README: take the concept from what LearnHarness is asking.
  * Reads only the host's detached session snapshot; never the page DOM. */
 import type { PluginSessionViewContext } from "learnharness-plugin-api";
-import type { Concept } from "./types.ts";
+import type { Concept, ConceptAnswer } from "./types.ts";
 
 export const MAX_PROMPT_LENGTH = 2000;
 export const MAX_CONTEXT_LENGTH = 2000;
@@ -15,7 +15,11 @@ export type ConceptResult =
 const clip = (text: string, limit: number) =>
 	text.length > limit ? text.slice(0, limit - 1).trimEnd() + "…" : text;
 
-function found(prompt: string, context?: string): ConceptResult {
+function found(
+	prompt: string,
+	context?: string,
+	answer?: ConceptAnswer,
+): ConceptResult {
 	const question = prompt.trim();
 	if (!question) return { status: "none" };
 	const extra = context?.trim();
@@ -24,6 +28,7 @@ function found(prompt: string, context?: string): ConceptResult {
 		concept: {
 			prompt: clip(question, MAX_PROMPT_LENGTH),
 			...(extra ? { context: clip(extra, MAX_CONTEXT_LENGTH) } : {}),
+			...(answer ? { answer } : {}),
 		},
 	};
 }
@@ -50,6 +55,23 @@ function latestTeacherText(view: PluginSessionViewContext): string {
 	return "";
 }
 
+/** Which labels are correct, when the host says so. Absent or unusable: no answer key. */
+export function answerFrom(
+	options: readonly { label: string }[],
+	correctIndices: readonly number[] | undefined,
+): ConceptAnswer | undefined {
+	if (!correctIndices?.length) return undefined;
+	const labels = options.map((option) => option.label.trim());
+	const correct = new Set(
+		correctIndices.filter((index) => labels[index]).map((index) => index),
+	);
+	if (!correct.size) return undefined;
+	return {
+		correct: [...correct].map((index) => labels[index]!),
+		others: labels.filter((_, index) => !correct.has(index)).filter(Boolean),
+	};
+}
+
 export function conceptFromView(view: PluginSessionViewContext): ConceptResult {
 	const input = view.input;
 	switch (input.type) {
@@ -66,7 +88,15 @@ export function conceptFromView(view: PluginSessionViewContext): ConceptResult {
 			]
 				.filter(Boolean)
 				.join("\n\n");
-			return found(input.question.question, context);
+			// The typed view omits the answer key; read it if a host supplies it, else self-check only.
+			const { correctIndices } = input.question as unknown as {
+				correctIndices?: readonly number[];
+			};
+			return found(
+				input.question.question,
+				context,
+				answerFrom(input.question.options, correctIndices),
+			);
 		}
 		case "plugin-question-answer":
 			return input.revealed
@@ -83,4 +113,127 @@ export function conceptFromView(view: PluginSessionViewContext): ConceptResult {
 		case "text":
 			return found(latestTeacherText(view));
 	}
+}
+
+// #17 meme modes. Design: docs/meme-modes.md.
+
+/** What Hint and Think may read from a question the learner has not revealed. */
+export interface EarlyRead {
+	concept: Concept;
+	/** Option labels, for the no-answer check. Never which one is correct. */
+	options: string[];
+}
+
+const text = (value: unknown) => (typeof value === "string" ? value : "");
+const labels = (options: unknown): string[] =>
+	Array.isArray(options)
+		? options.map((option) => text(option?.label).trim()).filter(Boolean)
+		: [];
+
+/** Pre-reveal read path, for Hint and Think only. Fields are whitelisted: question
+ * text, context and option labels. Never the draft, payload, history, or any answer
+ * key the host might attach. Anything else unrevealed stays unread (null). */
+export function conceptBeforeReveal(
+	view: PluginSessionViewContext,
+): EarlyRead | null {
+	const input = view.input;
+	if (input.type === "answer" && !input.revealed) {
+		const question = input.question;
+		const options = labels(question.options);
+		const result = found(
+			text(question.question),
+			[
+				text(question.context),
+				options.length
+					? `Answer options the learner will see: ${options.join(" | ")}`
+					: "",
+			]
+				.filter(Boolean)
+				.join("\n\n"),
+		);
+		return result.status === "found"
+			? { concept: result.concept, options }
+			: null;
+	}
+	if (input.type === "plugin-question-answer" && !input.revealed) {
+		const result = found(text(input.input.question));
+		return result.status === "found"
+			? { concept: result.concept, options: [] }
+			: null;
+	}
+	return null;
+}
+
+/** Option labels of a revealed native question, for the no-answer check. */
+export function optionLabels(view: PluginSessionViewContext): string[] {
+	const input = view.input;
+	return input.type === "answer" && input.revealed
+		? labels(input.question.options)
+		: [];
+}
+/** #18: the last native question the learner answered, read from the session history. */
+export interface AnsweredQuestion {
+	/** Session and question call id. */
+	key: string;
+	concept: Concept;
+	/** The host graded the answer as wrong. Ungraded answers are not wrong. */
+	wrong: boolean;
+	/** When the learner answered, in ms; NaN when unknown. */
+	answeredAt: number;
+}
+
+/** The host stores the graded answer (`QuestionAnswerData`) as the question call's tool
+ * result `details`. Only the latest one counts; a dismissed question has no answer to show. */
+export function lastAnsweredQuestion(
+	view: PluginSessionViewContext,
+): AnsweredQuestion | null {
+	for (let index = view.messages.length - 1; index >= 0; index--) {
+		// Read as plain data: the deep readonly message type is too large to narrow.
+		const message = view.messages[index] as unknown as {
+			role?: unknown;
+			toolCallId?: unknown;
+			details?: unknown;
+		};
+		if (message.role !== "toolResult" || typeof message.toolCallId !== "string")
+			continue;
+		const details = message.details as
+			| {
+					questionText?: unknown;
+					answeredAt?: unknown;
+					options?: unknown;
+					correct?: unknown;
+					dismissed?: unknown;
+			  }
+			| null
+			| undefined;
+		if (
+			!details ||
+			typeof details !== "object" ||
+			typeof details.questionText !== "string" ||
+			typeof details.answeredAt !== "string"
+		)
+			continue;
+		if (details.dismissed === true) return null;
+		const options = Array.isArray(details.options)
+			? details.options
+					.map((option: { label?: unknown } | null) =>
+						typeof option?.label === "string" ? option.label : "",
+					)
+					.filter(Boolean)
+			: [];
+		const result = found(
+			details.questionText,
+			options.length
+				? `Answer options shown to the learner: ${options.join(" | ")}`
+				: undefined,
+		);
+		if (result.status !== "found") return null;
+		return {
+			key: `${view.sessionId}:${message.toolCallId}`,
+			concept: result.concept,
+			wrong: details.correct === false,
+			answeredAt: Date.parse(details.answeredAt),
+		};
+	}
+	return null;
 }

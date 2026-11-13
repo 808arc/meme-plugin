@@ -7,8 +7,10 @@ import type {
 	PluginAction,
 	PluginActionContext,
 	PluginFrontendContext,
+	PluginNotification,
 	PluginSettingsSchema,
 } from "learnharness-plugin-api";
+import { FACT_CHECK } from "../src/config.ts";
 import { defaultBoxes } from "../src/library.ts";
 import { activate } from "../src/main.ts";
 import type { GeneratedMeme, PluginState } from "../src/types.ts";
@@ -39,9 +41,19 @@ const state: PluginState = {
 		cooldownGrowth: 2,
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
+		ownMemesShare: 100,
+		rejectCooldownDays: 1,
+		customFolder: "",
+		webSearch: true,
+		searchAgent: null,
+		mode: "answer",
+		teacherMemes: "off",
+		automaticMemes: "off",
 	},
 	pool: { memegen: 209, custom: 1, coolingDown: 3 },
+	customFolder: "/plugins/meme-plugin/data",
 	problems: ["custom-memes.json entry 2: bad"],
+	automatic: { used: 0, perDay: 10 },
 };
 
 function fixture(
@@ -81,6 +93,8 @@ function fixture(
 
 	const activation = new AbortController();
 	const calls: { operation: string; input: unknown }[] = [];
+	const requestIds: string[] = [];
+	const listeners = new Set<(event: PluginNotification) => void>();
 	const actions = new Map<string, PluginAction>();
 	const placements: unknown[] = [];
 	const surfaces: {
@@ -117,8 +131,20 @@ function fixture(
 				dispose() {},
 			};
 		};
+	const appEvents: ((event: { type: string }) => void)[] = [];
+	let refreshes = 0;
 	const ctx = {
 		signal: activation.signal,
+		onAppEvent(listener: (event: { type: string }) => void) {
+			appEvents.push(listener);
+			return () => {};
+		},
+		onResync() {
+			return () => {};
+		},
+		refreshActions() {
+			refreshes++;
+		},
 		registerAction(action: PluginAction) {
 			actions.set(action.id, action);
 			return () => {};
@@ -135,9 +161,21 @@ function fixture(
 			settings = mount;
 			return () => {};
 		},
+		registerToolRenderer() {
+			return () => {};
+		},
 		async call(operation: string, input?: unknown) {
-			calls.push({ operation, input });
+			// Request ids are random; record them apart so call inputs stay comparable.
+			if (input && typeof input === "object" && "requestId" in input) {
+				const { requestId, ...rest } = input as Record<string, unknown>;
+				requestIds.push(requestId as string);
+				calls.push({ operation, input: rest });
+			} else calls.push({ operation, input });
 			return backend(operation, input);
+		},
+		onNotification(listener: (event: PluginNotification) => void) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
 		},
 		ui: {
 			mountButton: widget("button"),
@@ -200,8 +238,44 @@ function fixture(
 		widgets.findLast(
 			(entry) => entry.kind === "button" && entry.props.label === label,
 		)!;
+	/** A top-bar render: the host evaluates the action's dynamic `disabled` predicate. */
+	let reads = 0;
+	const render = (view: Record<string, unknown>) => {
+		const disabled = actions.get("meme-this")!.disabled as (
+			context: PluginActionContext,
+		) => boolean;
+		return disabled({
+			placement: "top-bar",
+			surface: "session",
+			sessionId: "s",
+			kind: "teaching",
+			surfaceTarget: "surface-target",
+			get view() {
+				reads++;
+				return {
+					sessionId: "s",
+					transcript: [],
+					messages: [],
+					input: { type: "text" },
+					...view,
+				};
+			},
+		} as unknown as PluginActionContext);
+	};
 	return {
+		render,
+		reads: () => reads,
+		refreshes: () => refreshes,
+		appEvent: (type: string) => {
+			for (const listener of appEvents) listener({ type });
+		},
 		calls,
+		requestIds,
+		notify: (topic: string, data: unknown) => {
+			for (const listener of [...listeners])
+				listener({ pluginId: "meme-plugin", topic, data });
+		},
+		listeners,
 		actions,
 		placements,
 		surfaces,
@@ -253,7 +327,7 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 	assert.equal(surface.props.title, "Meme");
 	assert.match(
 		surface.container.querySelector(".meme-plugin-status")!.textContent!,
-		/Picking a meme/,
+		/Finding a fitting meme/,
 	);
 	assert.ok(surface.container.querySelector("[data-plugin-initial-focus]"));
 	await settle();
@@ -318,6 +392,14 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 		operation: "generate",
 		input: { prompt: "Who backed CUDA?", excludeMemeId: "custom:a" },
 	});
+	// Rejecting it also asks for another, and tells the backend to cool it down longer.
+	assert.equal(f.button("Not this one").props.disabled, false);
+	await (f.button("Not this one").props.onClick as () => Promise<void>)();
+	assert.deepEqual(f.calls[4], {
+		operation: "generate",
+		input: { prompt: "Who backed CUDA?", rejectMemeId: "custom:a" },
+	});
+	assert.equal(f.button("Not this one").props.disabled, false);
 });
 
 test("pressing the action again closes its surface, and a closed surface reopens", async (t) => {
@@ -403,7 +485,9 @@ test("an unrevealed question is not read; with no question the learner types a c
 		f.surfaces[0]!.container.querySelector(".meme-plugin-status")!.textContent!,
 		/Reveal the question first/,
 	);
-	assert.equal(f.calls.length, 0);
+	// #17: the mode is looked up; the question itself is not sent anywhere.
+	assert.deepEqual(f.calls, [{ operation: "get-state", input: undefined }]);
+	f.calls.length = 0;
 	void f.press(question);
 
 	void f.press({ type: "text" });
@@ -430,7 +514,12 @@ test("an unrevealed question is not read; with no question the learner types a c
 
 test("settings publish only what the backend accepted", async (t) => {
 	let current = state;
+	let exportFails = false;
 	const f = fixture(t, (operation, input) => {
+		if (operation === "export-memes") {
+			if (exportFails) throw new Error("There are no custom memes to export.");
+			return { path: "/data/exports/memes-1", images: 2 };
+		}
 		if (operation === "save-settings") {
 			if ((input as { cooldownDays?: number }).cooldownDays === 999)
 				throw new Error("cooldownDays must be a number from 0 to 365");
@@ -456,12 +545,32 @@ test("settings publish only what the backend accepted", async (t) => {
 	assert.deepEqual(
 		rows().map((row) => [row.key, row.type, row.value]),
 		[
+			["mode", "dropdown", "answer"],
 			["emphasis", "toggle", true],
 			["cooldownDays", "number", 14],
 			["cooldownGrowth", "number", 2],
+			["rejectCooldownDays", "number", 1],
+			["webSearch", "toggle", true],
 			["useMemegen", "toggle", true],
+			["teacherMemes", "dropdown", "off"],
+			["automaticMemes", "dropdown", "off"],
 			["imageBaseUrl", "text", "https://api.memegen.link"],
+			["ownMemesShare", "slider", 100],
+			["customFolder", "text", ""],
 		],
+	);
+	assert.match(
+		container.textContent!,
+		/Custom memes are read from \/plugins\/meme-plugin\/data\./,
+	);
+	const folder = rows().find((row) => row.key === "customFolder")!;
+	assert.equal(
+		folder.type === "text" && folder.validate!("/Users/me/memes"),
+		undefined,
+	);
+	assert.match(
+		(folder.type === "text" && folder.validate!("memes")) || "",
+		/absolute path/,
 	);
 	assert.match(
 		container.textContent!,
@@ -509,4 +618,358 @@ test("settings publish only what the backend accepted", async (t) => {
 	assert.equal(picker.props.value, undefined);
 	await (f.button("Reset cooldowns").props.onClick as () => Promise<void>)();
 	assert.match(container.textContent!, /0 cooling down/);
+	await (f.button("Export my memes").props.onClick as () => Promise<void>)();
+	assert.match(
+		container.textContent!,
+		/Exported custom-memes.json and 2 images to \/data\/exports\/memes-1/,
+	);
+	exportFails = true;
+	await (f.button("Export my memes").props.onClick as () => Promise<void>)();
+	assert.match(container.textContent!, /no custom memes to export/);
+});
+
+test("an unreliable fact shows a short message and the button still makes another meme", async (t) => {
+	let attempt = 0;
+	const f = fixture(t, (operation) => {
+		if (operation === "get-image") return null;
+		if (++attempt === 1) throw new Error(FACT_CHECK.UNRELIABLE_MESSAGE);
+		return generated("custom:a", ["first", "second"]);
+	});
+	void f.press(question);
+	await settle();
+	const surface = f.surfaces[0]!.container;
+	assert.equal(
+		surface.querySelector(".meme-plugin-error")!.textContent,
+		"Couldn't make a reliable meme for this question.",
+	);
+	const retry = f.button("Try again");
+	assert.equal(retry.props.disabled, false);
+	await (retry.props.onClick as () => Promise<void>)();
+	assert.equal(surface.querySelector(".meme-plugin-error"), null);
+	assert.equal(f.button("Another meme").props.disabled, false);
+});
+
+test("progress follows the backend's stage events for this request only", async (t) => {
+	let finish: (meme: GeneratedMeme) => void = () => {};
+	const f = fixture(t, (operation) =>
+		operation === "generate"
+			? new Promise<GeneratedMeme>((resolve) => {
+					finish = resolve;
+				})
+			: null,
+	);
+	void f.press(question);
+	await settle();
+	const surface = f.surfaces[0]!;
+	const label = () =>
+		surface.container.querySelector(".meme-plugin-status")!.textContent;
+	assert.equal(label(), "Finding a fitting meme…");
+	const [requestId] = f.requestIds;
+	assert.ok(requestId, "generate carries a request id");
+	f.notify("meme-stage", { requestId: "other-window", stage: "writing" });
+	assert.equal(
+		label(),
+		"Finding a fitting meme…",
+		"another request is ignored",
+	);
+	f.notify("meme-stage", { requestId, stage: "not-a-stage" });
+	assert.equal(
+		label(),
+		"Finding a fitting meme…",
+		"unknown stages are ignored",
+	);
+	f.notify("meme-stage", { requestId, stage: "writing" });
+	assert.equal(label(), "Writing the caption…");
+	finish(generated("custom:a", ["x"]));
+	await settle();
+	assert.equal(f.listeners.size, 0, "the stage listener ends with the request");
+});
+
+test("ratings go to the generated meme, show when reopened and roll back on failure", async (t) => {
+	let fail = false;
+	const f = fixture(t, (operation) => {
+		if (operation === "generate")
+			return {
+				...generated("custom:a", ["x"]),
+				generatedId: "g1",
+				rating: "down",
+			};
+		if (operation === "rate" && fail) throw new Error("disk full");
+		return null;
+	});
+	void f.press(question);
+	await settle();
+	const up = f.widgets.find(
+		(entry) => entry.kind === "button" && entry.props.label === "👍",
+	)!;
+	const down = f.widgets.find((entry) =>
+		String(entry.props.label).startsWith("👎"),
+	)!;
+	assert.equal(down.props.label, "👎 Not for me", "the stored rating shows");
+	assert.equal(up.props.disabled, false);
+	await (up.props.onClick as () => Promise<void>)();
+	assert.deepEqual(f.calls.at(-1), {
+		operation: "rate",
+		input: { id: "g1", rating: "up" },
+	});
+	assert.equal(up.props.label, "👍 Liked");
+	assert.equal(down.props.label, "👎");
+	fail = true;
+	await (up.props.onClick as () => Promise<void>)();
+	assert.equal(up.props.label, "👍 Liked", "a failed save rolls back");
+	assert.match(
+		f.surfaces[0]!.container.querySelector(".meme-plugin-notice")!.textContent!,
+		/Rating not saved\. disk full/,
+	);
+});
+
+// #17 meme modes
+
+test("Hint mode reads an unrevealed question through the whitelist and keeps it off screen", async (t) => {
+	const hinted: GeneratedMeme = {
+		...generated("custom:a", ["a GPU maker's boss"]),
+		mode: "hint",
+		fact: "Think of who sells GeForce.",
+	};
+	const f = fixture(t, (operation) =>
+		operation === "get-state"
+			? { ...state, settings: { ...state.settings, mode: "hint" } }
+			: operation === "generate"
+				? hinted
+				: null,
+	);
+	void f.press({
+		type: "answer",
+		revealed: false,
+		question: {
+			question: "Who backed CUDA?",
+			options: [{ label: "Jensen Huang", value: "a" }],
+			correctIndices: [0],
+			explanation: "secret",
+		},
+		draft: { values: ["a"], text: "secret" },
+	});
+	await settle();
+	assert.deepEqual(f.calls.slice(0, 2), [
+		{ operation: "get-state", input: undefined },
+		{
+			operation: "generate",
+			input: {
+				prompt: "Who backed CUDA?",
+				context: "Answer options the learner will see: Jensen Huang",
+				options: ["Jensen Huang"],
+				early: true,
+			},
+		},
+	]);
+	const surface = f.surfaces[0]!.container;
+	assert.equal(
+		surface.querySelector(".meme-plugin-concept")!.textContent,
+		"Before you reveal the question",
+	);
+	assert.equal(
+		surface.querySelector(".meme-plugin-fact")!.textContent,
+		"Hint: Think of who sells GeForce.",
+	);
+	assert.ok(!surface.textContent!.includes("Who backed CUDA?"));
+	// Another meme keeps the early flag.
+	await (f.button("Another meme").props.onClick as () => Promise<void>)();
+	assert.equal((f.calls.at(-2)!.input as { early?: boolean }).early, true);
+});
+
+test("Answer mode still refuses an unrevealed question; revealed options travel for the check", async (t) => {
+	const f = fixture(t, (operation) =>
+		operation === "get-state"
+			? state
+			: operation === "generate"
+				? generated("custom:a", ["x"])
+				: null,
+	);
+	void f.press({ ...question, revealed: false });
+	await settle();
+	assert.deepEqual(f.calls, [{ operation: "get-state", input: undefined }]);
+	assert.match(
+		f.surfaces[0]!.container.querySelector(".meme-plugin-status")!.textContent!,
+		/Reveal the question first/,
+	);
+	void f.press(question);
+	void f.press({
+		...question,
+		question: {
+			question: "Who backed CUDA?",
+			options: [{ label: "Jensen Huang", value: "a" }],
+		},
+	});
+	await settle();
+	assert.deepEqual((f.calls.at(-2) ?? f.calls.at(-1))!.input, {
+		prompt: "Who backed CUDA?",
+		context: "Answer options shown to the learner: Jensen Huang",
+		options: ["Jensen Huang"],
+	});
+});
+
+// #18 buttonless mode
+const answered = (
+	toolCallId: string,
+	extra: Record<string, unknown> = {},
+	answeredAt = new Date(Date.now() + 1000).toISOString(),
+) => ({
+	role: "toolResult",
+	toolCallId,
+	toolName: "quiz",
+	content: [],
+	isError: false,
+	details: {
+		kind: "quiz",
+		questionText: "Who backed CUDA?",
+		options: [
+			{ index: 0, label: "Jensen Huang" },
+			{ index: 1, label: "Lisa Su" },
+		],
+		dontKnow: false,
+		answers: [],
+		correct: true,
+		answeredAt,
+		...extra,
+	},
+});
+const automaticBackend =
+	(mode: string, log: unknown[] = []) =>
+	(operation: string, input: unknown) => {
+		if (operation === "get-state")
+			return {
+				...state,
+				settings: { ...state.settings, automaticMemes: mode },
+			};
+		if (operation === "auto-meme") {
+			log.push(input);
+			return { status: "meme", meme: generated("custom:auto", ["auto"]) };
+		}
+		return null;
+	};
+
+test("automatic memes are off by default: no view read, no request, action stays enabled", async (t) => {
+	const f = fixture(t, automaticBackend("off"));
+	assert.equal(f.render({ messages: [answered("q1")] }), false);
+	await settle();
+	assert.deepEqual(
+		f.calls.map((call) => call.operation),
+		["get-state"],
+	);
+	assert.equal(
+		f.refreshes(),
+		1,
+		"the predicate is re-run once settings are known",
+	);
+	assert.equal(f.render({ messages: [answered("q1")] }), false);
+	await settle();
+	assert.equal(f.reads(), 0, "off: the session view is never read");
+	assert.equal(f.surfaces.length, 0);
+	assert.ok(
+		!f.calls.some((call) => call.operation === "auto-meme"),
+		"off: nothing is sent",
+	);
+});
+
+test("an automatic meme appears only after an answer, folded and dismissible", async (t) => {
+	const sent: unknown[] = [];
+	const f = fixture(t, automaticBackend("every", sent));
+	f.render({ input: { type: "text" } });
+	await settle();
+
+	// A pending question, even revealed, has no answer yet: nothing.
+	f.render({ input: question });
+	// An unrevealed next question on screen: the reveal rule holds nothing back early.
+	f.render({
+		input: { ...question, revealed: false },
+		messages: [answered("q1")],
+	});
+	await settle();
+	assert.deepEqual(sent, []);
+	assert.equal(f.surfaces.length, 0);
+
+	f.render({ input: { type: "text" }, messages: [answered("q1")] });
+	await settle();
+	assert.deepEqual(sent, [
+		{
+			key: "s:q1",
+			prompt: "Who backed CUDA?",
+			context: "Answer options shown to the learner: Jensen Huang | Lisa Su",
+			wrong: false,
+		},
+	]);
+	const surface = f.surfaces[0]!;
+	assert.equal(
+		surface.container.querySelector("[data-plugin-initial-focus]"),
+		null,
+		"an automatic meme takes no focus",
+	);
+	const fold = surface.container.querySelector(
+		".meme-plugin-fold",
+	) as HTMLElement;
+	assert.equal(fold.hidden, true, "collapsed by default");
+	assert.equal(
+		fold.querySelector(".meme-plugin-line")!.textContent,
+		"auto",
+		"the meme is ready behind the fold",
+	);
+	(f.button("Show meme").props.onClick as () => void)();
+	assert.equal(fold.hidden, false);
+	assert.equal(f.button("Hide meme").props.label, "Hide meme");
+	(f.button("Dismiss").props.onClick as () => void)();
+	assert.equal(surface.signal.signal.aborted, true);
+	assert.equal(surface.container.children.length, 0);
+
+	// Same question again (later renders): never a second automatic meme.
+	f.render({ input: { type: "text" }, messages: [answered("q1")] });
+	f.appEvent("turn-settled");
+	await settle();
+	f.render({ input: { type: "text" }, messages: [answered("q1")] });
+	await settle();
+	assert.equal(sent.length, 1);
+	assert.equal(f.surfaces.length, 1);
+});
+
+test("automatic memes skip old answers, dismissed questions and an open meme", async (t) => {
+	const sent: unknown[] = [];
+	const f = fixture(t, automaticBackend("wrong", sent));
+	f.render({});
+	await settle();
+	// Answered before this window started: history, not a fresh answer.
+	f.render({ messages: [answered("old", {}, "2020-01-01T00:00:00.000Z")] });
+	f.render({ messages: [answered("gone", { dismissed: true })] });
+	await settle();
+	assert.deepEqual(sent, []);
+
+	void f.press(question);
+	f.render({ messages: [answered("q2", { correct: false })] });
+	await settle();
+	assert.deepEqual(sent, [], "the learner already has a meme open");
+
+	f.surfaces[0]!.signal.abort();
+	f.surfaces[0]!.cleanup?.();
+	f.render({ messages: [answered("q3", { correct: false })] });
+	await settle();
+	assert.deepEqual(
+		(sent as { key: string; wrong: boolean }[]).map((entry) => [
+			entry.key,
+			entry.wrong,
+		]),
+		[["s:q3", true]],
+		"the graded verdict travels; the backend applies the frequency",
+	);
+});
+
+test("settings say when today's automatic budget is used up", async (t) => {
+	const f = fixture(t, () => ({
+		...state,
+		automatic: { used: 10, perDay: 10 },
+	}));
+	const container = f.document.createElement("div");
+	f.mountSettings(container);
+	await settle();
+	assert.match(
+		container.textContent!,
+		/automatic memes are used up.*Meme this still works/,
+	);
 });

@@ -5,7 +5,10 @@ import {
 	coolingDown,
 	MAX_COOLDOWN_DAYS,
 	pickMeme,
+	pickPreferred,
+	recordRejection,
 	recordUse,
+	shortlist,
 } from "../src/scheduler.ts";
 import type { Usage } from "../src/types.ts";
 
@@ -67,4 +70,101 @@ test("an exhausted pool falls back to the meme that is due soonest", () => {
 		"b",
 	);
 	assert.equal(pickMeme([], usage, 100), undefined);
+});
+
+test("the shortlist offers only memes that are not cooling down, up to the limit", () => {
+	const usage: Record<string, Usage> = {
+		a: { uses: 1, lastUsedAt: 0, dueAt: 900 },
+	};
+	assert.deepEqual(shortlist(["a", "b", "c"], usage, 100, 20, () => 0).sort(), [
+		"b",
+		"c",
+	]);
+	assert.equal(shortlist(["a", "b", "c"], usage, 100, 1, () => 0).length, 1);
+	// Whole pool cooling down: only the ones due soonest are offered.
+	assert.deepEqual(
+		shortlist(
+			["a", "b", "c"],
+			{
+				a: { uses: 2, lastUsedAt: 0, dueAt: 900 },
+				b: { uses: 1, lastUsedAt: 0, dueAt: 500 },
+				c: { uses: 1, lastUsedAt: 0, dueAt: 500 },
+			},
+			100,
+			20,
+		).sort(),
+		["b", "c"],
+	);
+	assert.deepEqual(shortlist([], usage, 100, 20), []);
+});
+
+test("own memes are preferred while one is eligible, then the rest rotate in", () => {
+	const ids = ["custom:x", "custom:y", "memegen:a", "memegen:b"];
+	const own = new Set(["custom:x", "custom:y"]);
+	const now = 1_000_000;
+	for (const roll of [0, 0.5, 0.999])
+		assert.ok(own.has(pickPreferred(ids, own, {}, now, 1, () => roll)!));
+	const usage: Record<string, Usage> = {
+		"custom:x": recordUse(undefined, now, settings),
+	};
+	assert.equal(
+		pickPreferred(ids, own, usage, now, 1, () => 0.9),
+		"custom:y",
+	);
+	usage["custom:y"] = recordUse(undefined, now, settings);
+	// Every own meme cooling down: the catalogue takes over.
+	for (const roll of [0, 0.999])
+		assert.ok(!own.has(pickPreferred(ids, own, usage, now, 1, () => roll)!));
+	// A share below 1 mixes the catalogue in: a roll above the share picks from all ids.
+	assert.equal(
+		pickPreferred(ids, own, {}, now, 0.5, () => 0.2),
+		"custom:x",
+	);
+	assert.equal(
+		pickPreferred(ids, own, {}, now, 0.5, () => 0.6),
+		"memegen:a",
+	);
+	assert.equal(pickPreferred([], own, {}, now, 1), undefined);
+});
+
+test("a rejection is one more use, kept out at least the minimum", () => {
+	const now = 1_000_000;
+	const reject = { ...settings, rejectCooldownDays: 1 };
+	const first = recordUse(undefined, now, settings);
+	assert.deepEqual(recordRejection(first, now, reject), {
+		uses: 2,
+		lastUsedAt: now,
+		dueAt: now + 28 * DAY,
+	});
+	const off = { cooldownDays: 0, cooldownGrowth: 2, rejectCooldownDays: 1 };
+	assert.equal(recordRejection(undefined, now, off).dueAt, now + DAY);
+	assert.equal(
+		recordRejection(undefined, now, { ...off, rejectCooldownDays: 0 }).dueAt,
+		now,
+	);
+});
+
+test("fix(G): dated memes rank last and fill the shortlist only when needed", () => {
+	const dated = new Set(["d1", "d2"]);
+	const isDated = (id: string) => dated.has(id);
+	const ids = ["a", "d1", "b", "d2", "c"];
+	const three = shortlist(ids, {}, 0, 3, () => 0.5, isDated);
+	assert.deepEqual(
+		[...three].sort(),
+		["a", "b", "c"],
+		"no dated meme while others fit",
+	);
+	const four = shortlist(ids, {}, 0, 4, () => 0.5, isDated);
+	assert.equal(
+		four.filter((id) => dated.has(id)).length,
+		1,
+		"one dated fills the gap",
+	);
+	assert.deepEqual(four.slice(0, 3).sort(), ["a", "b", "c"]);
+	const all = shortlist(ids, {}, 0, 20, () => 0.5, isDated);
+	assert.deepEqual(
+		all.slice(3).sort(),
+		["d1", "d2"],
+		"dated come after the rest",
+	);
 });

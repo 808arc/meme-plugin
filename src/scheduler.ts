@@ -25,6 +25,23 @@ export function recordUse(
 	return { uses, lastUsedAt: now, dueAt: now + cooldownMs(uses, settings) };
 }
 
+/** "Not this one" (#21): one more use, and at least `rejectCooldownDays` away even
+ * when the normal cooldown is off. */
+export function recordRejection(
+	previous: Usage | undefined,
+	now: number,
+	settings: Pick<
+		Settings,
+		"cooldownDays" | "cooldownGrowth" | "rejectCooldownDays"
+	>,
+): Usage {
+	const use = recordUse(previous, now, settings);
+	return {
+		...use,
+		dueAt: Math.max(use.dueAt, now + settings.rejectCooldownDays * DAY),
+	};
+}
+
 export function coolingDown(
 	usage: Readonly<Record<string, Usage>>,
 	id: string,

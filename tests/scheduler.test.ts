@@ -6,6 +6,7 @@ import {
 	MAX_COOLDOWN_DAYS,
 	pickMeme,
 	pickPreferred,
+	recordRejection,
 	recordUse,
 } from "../src/scheduler.ts";
 import type { Usage } from "../src/types.ts";
@@ -97,4 +98,21 @@ test("own memes are preferred while one is eligible, then the rest rotate in", (
 		"memegen:a",
 	);
 	assert.equal(pickPreferred([], own, {}, now, 1), undefined);
+});
+
+test("a rejection is one more use, kept out at least the minimum", () => {
+	const now = 1_000_000;
+	const reject = { ...settings, rejectCooldownDays: 1 };
+	const first = recordUse(undefined, now, settings);
+	assert.deepEqual(recordRejection(first, now, reject), {
+		uses: 2,
+		lastUsedAt: now,
+		dueAt: now + 28 * DAY,
+	});
+	const off = { cooldownDays: 0, cooldownGrowth: 2, rejectCooldownDays: 1 };
+	assert.equal(recordRejection(undefined, now, off).dueAt, now + DAY);
+	assert.equal(
+		recordRejection(undefined, now, { ...off, rejectCooldownDays: 0 }).dueAt,
+		now,
+	);
 });

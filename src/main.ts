@@ -8,10 +8,15 @@ import type {
 } from "learnharness-plugin-api";
 import { type ConceptResult, conceptFromView } from "./concept.ts";
 import { element, mountMeme } from "./render.ts";
-import { imageBaseUrlProblem, LIMITS } from "./settings.ts";
+import {
+	customFolderProblem,
+	imageBaseUrlProblem,
+	LIMITS,
+} from "./settings.ts";
 import type {
 	Concept,
 	GeneratedMeme,
+	MemeExport,
 	MemeImage,
 	PluginState,
 	Settings,
@@ -242,6 +247,17 @@ function settingsRows(
 			onChange: (cooldownGrowth) => save({ cooldownGrowth }),
 		},
 		{
+			type: "number",
+			key: "rejectCooldownDays",
+			label: "Minimum cooldown after rejecting (days)",
+			description:
+				"A meme you reject with Not this one stays out at least this long, even when the cooldown is 0.",
+			value: settings.rejectCooldownDays,
+			...LIMITS.rejectCooldownDays,
+			step: 1,
+			onChange: (rejectCooldownDays) => save({ rejectCooldownDays }),
+		},
+		{
 			type: "toggle",
 			key: "useMemegen",
 			label: "Use the bundled catalogue",
@@ -259,6 +275,27 @@ function settingsRows(
 			validate: (value) =>
 				imageBaseUrlProblem(value.trim().replace(/\/+$/, "")),
 			onChange: (imageBaseUrl) => save({ imageBaseUrl }),
+		},
+		{
+			type: "slider",
+			key: "ownMemesShare",
+			label: "Own memes first (%)",
+			description:
+				"Chance a meme comes from your own memes while one is out of cooldown. 100: always, then the catalogue.",
+			value: settings.ownMemesShare,
+			...LIMITS.ownMemesShare,
+			step: 5,
+			onChange: (ownMemesShare) => save({ ownMemesShare }),
+		},
+		{
+			type: "text",
+			key: "customFolder",
+			label: "Custom memes folder",
+			description:
+				"Folder with custom-memes.json and custom-images/. Only read, never changed. Leave empty for the plugin's data folder.",
+			value: settings.customFolder,
+			validate: (value) => customFolderProblem(value.trim()),
+			onChange: (customFolder) => save({ customFolder }),
 		},
 	];
 }
@@ -291,6 +328,8 @@ function mountSettings(
 		const rowsSlot = element("div", "");
 		const summary = element("p", "meme-plugin-settings-note");
 		const resetSlot = element("div", "");
+		const exportSlot = element("div", "");
+		const exported = element("p", "meme-plugin-settings-note");
 		const problems = element("ul", "meme-plugin-settings-problems");
 		root.append(
 			element("p", "meme-plugin-settings-label", "Model"),
@@ -303,6 +342,8 @@ function mountSettings(
 			rowsSlot,
 			summary,
 			resetSlot,
+			exportSlot,
+			exported,
 			problems,
 		);
 
@@ -315,7 +356,7 @@ function mountSettings(
 			rows.update({
 				rows: settingsRows(state.settings, state.pool.memegen, save),
 			});
-			summary.textContent = `Pool: ${state.pool.memegen} bundled and ${state.pool.custom} custom memes, ${state.pool.coolingDown} cooling down.`;
+			summary.textContent = `Pool: ${state.pool.memegen} bundled and ${state.pool.custom} custom memes, ${state.pool.coolingDown} cooling down. Custom memes are read from ${state.customFolder}.`;
 			problems.replaceChildren(
 				...state.problems.map((problem) => element("li", "", problem)),
 			);
@@ -355,6 +396,26 @@ function mountSettings(
 				size: "sm",
 				onClick: async () =>
 					publish(await ctx.call<PluginState>("reset-usage")),
+			},
+			{ signal },
+		);
+		// No save dialog in the plugin API: the copy goes under data/exports/ and the
+		// path is shown so the learner can move it.
+		ctx.ui.mountButton(
+			exportSlot,
+			{
+				label: "Export my memes",
+				variant: "outline",
+				size: "sm",
+				onClick: async () => {
+					try {
+						const result = await ctx.call<MemeExport>("export-memes");
+						if (!signal.aborted)
+							exported.textContent = `Exported custom-memes.json and ${result.images} images to ${result.path}`;
+					} catch (error) {
+						if (!signal.aborted) exported.textContent = message(error);
+					}
+				},
 			},
 			{ signal },
 		);

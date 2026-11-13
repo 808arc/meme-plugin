@@ -93,6 +93,13 @@ export interface Settings {
 	useMemegen: boolean;
 	/** Where blank memegen images come from. Empty: never fetch, show text only. */
 	imageBaseUrl: string;
+	/** #21: chance (%) that a pick comes from your own memes while one is eligible. */
+	ownMemesShare: number;
+	/** #21: a rejected meme stays out at least this many days, even with cooldown 0. */
+	rejectCooldownDays: number;
+	/** #21: absolute folder holding custom-memes.json and custom-images/. Empty: data/.
+	 * Only ever read. */
+	customFolder: string;
 }
 
 export interface Usage {
@@ -105,8 +112,17 @@ export interface Usage {
 export interface PluginState {
 	settings: Settings;
 	pool: { memegen: number; custom: number; coolingDown: number };
+	/** #21: absolute folder custom memes are read from. */
+	customFolder: string;
 	/** Custom-library entries that were skipped, with the reason. */
 	problems: string[];
+}
+
+/** #21: result of "Export my memes". */
+export interface MemeExport {
+	/** Absolute folder the copy was written to, inside the plugin's data/. */
+	path: string;
+	images: number;
 }
 
 export interface MemeImage {

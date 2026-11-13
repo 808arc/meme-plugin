@@ -10,7 +10,13 @@ import type {
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
 import { OWN_MEMES } from "./config.ts";
 import { loadImage } from "./images.ts";
-import { loadCustomMemes, memegenMemes } from "./library.ts";
+import {
+	CUSTOM_FILE,
+	CUSTOM_IMAGES,
+	IMAGE_FILE,
+	loadCustomMemes,
+	memegenMemes,
+} from "./library.ts";
 import {
 	extractJson,
 	fillRequest,
@@ -18,13 +24,19 @@ import {
 	PROMPT_VERSION,
 	templateRequest,
 } from "./prompts.ts";
-import { coolingDown, pickPreferred, recordUse } from "./scheduler.ts";
+import {
+	coolingDown,
+	pickPreferred,
+	recordRejection,
+	recordUse,
+} from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
 	Concept,
 	GeneratedMeme,
 	Meme,
+	MemeExport,
 	MemeImage,
 	PluginState,
 	Settings,
@@ -143,8 +155,14 @@ export function activate(ctx: PluginBackendContext): () => void {
 		state = next;
 	};
 
+	/** #21: where custom memes are read from. Outside data/ it is only ever read. */
+	const customDirectory = () =>
+		state.settings.customFolder || ctx.dataDirectory;
 	const pool = () => {
-		const custom = loadCustomMemes(ctx.dataDirectory);
+		const folder = customDirectory();
+		const custom = loadCustomMemes(folder);
+		if (folder !== ctx.dataDirectory && !fs.existsSync(folder))
+			custom.problems.unshift(`Custom memes folder not found: ${folder}`);
 		const memegen = state.settings.useMemegen
 			? memegenMemes(state.settings.imageBaseUrl)
 			: [];
@@ -167,6 +185,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 					coolingDown(state.usage, meme.id, now),
 				).length,
 			},
+			customFolder: customDirectory(),
 			problems: current.problems,
 		};
 	};
@@ -296,7 +315,8 @@ export function activate(ctx: PluginBackendContext): () => void {
 				: {}),
 		};
 		// "Not this one" (#21): the meme on screen counts as one more use, so its
-		// cooldown restarts one step longer. It comes back later, never at once.
+		// cooldown restarts one step longer, and at least the minimum after rejecting.
+		// It comes back later, never at once.
 		const rejected =
 			typeof value.rejectMemeId === "string" ? value.rejectMemeId : undefined;
 		const exclude =
@@ -311,7 +331,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 				...state,
 				usage: {
 					...state.usage,
-					[rejected]: recordUse(
+					[rejected]: recordRejection(
 						state.usage[rejected],
 						Date.now(),
 						state.settings,
@@ -339,7 +359,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 				),
 				state.usage,
 				Date.now(),
-				OWN_MEMES.share,
+				state.settings.ownMemesShare / 100,
 			);
 			const meme = memes.find((candidate) => candidate.id === id);
 			if (!meme) break;
@@ -402,6 +422,44 @@ export function activate(ctx: PluginBackendContext): () => void {
 			: new Error("No meme could be prepared.");
 	}
 
+	/** "Export my memes" (#21): copy custom-memes.json and its images into a new
+	 * folder under data/exports/. The SDK has no save dialog, and the plugin writes
+	 * only inside data/, so the learner copies that folder wherever they like. */
+	function exportMemes(): MemeExport {
+		const source = customDirectory();
+		let list: Buffer;
+		try {
+			list = fs.readFileSync(path.join(source, CUSTOM_FILE));
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT")
+				throw new Error(`There are no custom memes to export in ${source}.`);
+			throw error;
+		}
+		const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+		const target = path.join(
+			ctx.dataDirectory,
+			OWN_MEMES.exportsFolder,
+			`memes-${stamp}`,
+		);
+		fs.mkdirSync(path.join(target, CUSTOM_IMAGES), { recursive: true });
+		fs.writeFileSync(path.join(target, CUSTOM_FILE), list, { flag: "wx" });
+		let images = 0;
+		const imagesFrom = path.join(source, CUSTOM_IMAGES);
+		const names = fs.existsSync(imagesFrom) ? fs.readdirSync(imagesFrom) : [];
+		for (const name of names) {
+			const file = path.join(imagesFrom, name);
+			// Same rule as reading: plain image files only, never links or folders.
+			if (!IMAGE_FILE.test(name) || !fs.lstatSync(file).isFile()) continue;
+			fs.copyFileSync(
+				file,
+				path.join(target, CUSTOM_IMAGES, name),
+				fs.constants.COPYFILE_EXCL,
+			);
+			images++;
+		}
+		return { path: target, images };
+	}
+
 	const unregister = [
 		ctx.handle("get-state", () => {
 			alive();
@@ -411,6 +469,10 @@ export function activate(ctx: PluginBackendContext): () => void {
 			alive();
 			save({ ...state, settings: applySettingsPatch(state.settings, input) });
 			return view();
+		}),
+		ctx.handle("export-memes", () => {
+			alive();
+			return exportMemes();
 		}),
 		ctx.handle("reset-usage", () => {
 			alive();
@@ -436,7 +498,12 @@ export function activate(ctx: PluginBackendContext): () => void {
 					? pool().memes.find((candidate) => candidate.id === id)
 					: undefined;
 			if (!meme) throw new Error("Unknown meme.");
-			const image = await loadImage(meme, ctx.dataDirectory, ctx.signal);
+			const image = await loadImage(
+				meme,
+				ctx.dataDirectory,
+				ctx.signal,
+				customDirectory(),
+			);
 			alive();
 			return image;
 		}),

@@ -10,7 +10,12 @@ import type {
 } from "learnharness-plugin-api";
 import { activate } from "../src/backend.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
-import type { GeneratedMeme, MemeImage, PluginState } from "../src/types.ts";
+import type {
+	GeneratedMeme,
+	MemeExport,
+	MemeImage,
+	PluginState,
+} from "../src/types.ts";
 
 const cheap = { provider: "fixture", id: "cheap-model" };
 const other = { provider: "fixture", id: "other-model" };
@@ -422,7 +427,18 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 		cooldownGrowth: 2,
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
+		ownMemesShare: 100,
+		rejectCooldownDays: 1,
+		customFolder: "",
 	});
+	assert.equal(initial.customFolder, f.dataDirectory);
+	for (const [patch, error] of [
+		[{ ownMemesShare: 101 }, /ownMemesShare/],
+		[{ rejectCooldownDays: -1 }, /rejectCooldownDays/],
+		[{ customFolder: "relative/memes" }, /absolute path/],
+		[{ customFolder: 3 }, /customFolder must be text/],
+	] as const)
+		await assert.rejects(first.call("save-settings", patch), error);
 	assert.equal(initial.pool.memegen, memegenMemes("").length);
 	assert.equal(initial.pool.custom, 2);
 	await assert.rejects(
@@ -763,6 +779,17 @@ test("not this one: the rejected meme cools down one step longer and another is 
 	// Still in the pool: not deleted, back after its cooldown.
 	assert.equal((await call<PluginState>("get-state")).pool.custom, 2);
 
+	// Cooldown off: a rejected meme still sits out the minimum after rejecting.
+	await call("save-settings", { cooldownDays: 0 });
+	const now = Date.now();
+	await call<GeneratedMeme>("generate", {
+		prompt: "x",
+		rejectMemeId: next.meme.id,
+	});
+	const minimum = f.stored().usage[next.meme.id];
+	assert.ok(minimum.dueAt >= now + 86_400_000);
+	assert.ok(minimum.dueAt < now + 2 * 86_400_000);
+
 	// An id that is not in the pool records nothing.
 	await call("reset-usage");
 	await call<GeneratedMeme>("generate", {
@@ -770,6 +797,57 @@ test("not this one: the rejected meme cools down one step longer and another is 
 		rejectMemeId: "custom:gone",
 	});
 	assert.equal(f.stored().usage["custom:gone"], undefined);
+});
+
+test("own memes can live outside data/: only read, and exported into data/", async (t) => {
+	const f = fixture(t, { memes: null });
+	const outside = fs.mkdtempSync(path.join(os.tmpdir(), "meme-plugin-own-"));
+	t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+	fs.writeFileSync(
+		path.join(outside, "custom-memes.json"),
+		JSON.stringify(custom),
+	);
+	fs.mkdirSync(path.join(outside, "custom-images"));
+	fs.writeFileSync(path.join(outside, "custom-images", "proud.png"), PNG);
+	fs.writeFileSync(path.join(outside, "custom-images", "notes.txt"), "x");
+	const listing = () => fs.readdirSync(outside, { recursive: true }).sort();
+	const before = listing();
+
+	const { call } = f.start();
+	await assert.rejects(call("export-memes"), /no custom memes to export/);
+	const missing = await call<PluginState>("save-settings", {
+		...offline,
+		customFolder: path.join(outside, "nowhere"),
+	});
+	assert.match(missing.problems[0]!, /Custom memes folder not found/);
+	const state = await call<PluginState>("save-settings", {
+		customFolder: outside,
+	});
+	assert.deepEqual(
+		[state.pool.custom, state.customFolder, state.problems],
+		[2, outside, []],
+	);
+	assert.deepEqual(
+		await call<MemeImage>("get-image", { id: "custom:proud-speech" }),
+		{ mimeType: "image/png", data: PNG.toString("base64") },
+	);
+	await call<GeneratedMeme>("generate", { prompt: "x" });
+
+	const result = await call<MemeExport>("export-memes");
+	assert.equal(result.images, 1, "only image files are copied");
+	assert.equal(
+		path.dirname(result.path),
+		path.join(f.dataDirectory, "exports"),
+	);
+	assert.equal(
+		fs.readFileSync(path.join(result.path, "custom-memes.json"), "utf8"),
+		JSON.stringify(custom),
+	);
+	assert.deepEqual(
+		fs.readFileSync(path.join(result.path, "custom-images", "proud.png")),
+		PNG,
+	);
+	assert.deepEqual(listing(), before, "the outside folder is never written");
 });
 
 test("the bundled catalogue is well formed", () => {

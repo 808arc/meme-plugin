@@ -8,6 +8,7 @@ import {
 	eligibleMemes,
 	formatReport,
 	parseVerdict,
+	makeMeme,
 	pickMeme,
 	runEval,
 } from "./harness.ts";
@@ -110,11 +111,16 @@ test("a stub run scores every concept and reports the means", async () => {
 	assert.match(report, /\| 3 \| 3 \| 3 \|/);
 });
 
-test("a bad judge reply is recorded as an error without stopping the run", async () => {
+test("a judge reply that stays invalid after the retry is recorded as an error", async () => {
 	let calls = 0;
-	const judge: Complete = async () => {
+	const judge: Complete = async (request) => {
 		calls++;
-		return calls === 1 ? "not json at all" : JSON.stringify(verdict(5));
+		if (calls === 1) return "not json at all";
+		if (calls === 2) {
+			if (calls === 2) assert.match(request.user, /That reply cannot be used/);
+			return "still not json";
+		}
+		return JSON.stringify(verdict(5));
 	};
 	const run = await runEval({
 		concepts: EVAL_CONCEPTS.slice(0, 2),
@@ -128,6 +134,22 @@ test("a bad judge reply is recorded as an error without stopping the run", async
 	assert.match(run.rows[0]!.error!, /^judge: /);
 	assert.equal(run.rows[1]!.verdict?.fit.score, 5);
 	assert.equal(run.means.fit, 5);
+});
+
+test("a single bad reply is corrected by the one retry", async () => {
+	let calls = 0;
+	const generate: Complete = async (request) => {
+		calls++;
+		if (calls === 1) return "oops";
+		if (calls === 2) assert.match(request.user, /That reply cannot be used/);
+		return stubGenerate({
+			...request,
+			user: request.user.split("\n\nYour previous reply")[0]!,
+		});
+	};
+	const made = await makeMeme(EVAL_CONCEPTS[0]!, meme, generate);
+	assert.equal(made.lines.join(" / "), "filled / filled");
+	assert.equal(calls, 3);
 });
 
 test("a failing generator is recorded per concept and the means stay null when nothing scores", async () => {

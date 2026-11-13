@@ -115,31 +115,47 @@ export interface MadeMeme {
 	lines: string[];
 }
 
-/** Steps 3 to 5 of the plugin, without the cache, the emphasis and the retry. */
+/** One exchange that must end in JSON accepted by `parse`. Like the backend, it gets one
+ * correction retry, told why the first reply was rejected. */
+export async function ask<T>(
+	complete: Complete,
+	request: ModelRequest,
+	parse: (raw: unknown) => T,
+): Promise<T> {
+	const reply = await complete(request);
+	try {
+		return parse(extractJson(reply));
+	} catch (error) {
+		const reason = (error as Error).message;
+		const retry = await complete({
+			systemPrompt: request.systemPrompt,
+			user: `${request.user}\n\nYour previous reply:\n${reply}\n\nThat reply cannot be used: ${reason}. Reply again with only the corrected JSON object.`,
+		});
+		return parse(extractJson(retry));
+	}
+}
+
+/** Steps 3 to 5 of the plugin, without the cache and the emphasis. */
 export async function makeMeme(
 	concept: EvalConcept,
 	meme: Meme,
 	generate: Complete,
 ): Promise<MadeMeme> {
-	const template = parseTemplate(
-		extractJson(await generate(templateRequest(meme))),
-		meme.caption,
+	const template = await ask(generate, templateRequest(meme), (raw) =>
+		parseTemplate(raw, meme.caption),
 	);
-	const filling = parseFilling(
-		extractJson(
-			await generate(
-				fillRequest({
-					meme,
-					template,
-					concept: {
-						prompt: concept.prompt,
-						...(concept.context ? { context: concept.context } : {}),
-					},
-					emphasis: false,
-				}),
-			),
-		),
-		template,
+	const filling = await ask(
+		generate,
+		fillRequest({
+			meme,
+			template,
+			concept: {
+				prompt: concept.prompt,
+				...(concept.context ? { context: concept.context } : {}),
+			},
+			emphasis: false,
+		}),
+		(raw) => parseFilling(raw, template),
 	);
 	return {
 		templateLines: template.lines,
@@ -204,17 +220,15 @@ export async function runEval(options: RunOptions): Promise<EvalRun> {
 			continue;
 		}
 		try {
-			row.verdict = parseVerdict(
-				extractJson(
-					await options.judge(
-						judgeRequest({
-							concept,
-							memeName: meme.name,
-							lines: row.lines!,
-							fact: row.fact!,
-						}),
-					),
-				),
+			row.verdict = await ask(
+				options.judge,
+				judgeRequest({
+					concept,
+					memeName: meme.name,
+					lines: row.lines!,
+					fact: row.fact!,
+				}),
+				parseVerdict,
 			);
 		} catch (error) {
 			row.error = `judge: ${(error as Error).message}`;

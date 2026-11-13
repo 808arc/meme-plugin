@@ -1,6 +1,9 @@
 /** Run the meme eval against live models. Not part of `npm test`.
  *
- *   EVAL_MODEL=/abs/path/to/adapter.ts npm run eval -- [--limit 5] [--out tests/eval/reports]
+ *   EVAL_MODEL=/abs/path/to/adapter.ts npm run eval -- [--limit 5] [--out tests/eval/reports] [--data <plugin data dir>]
+ *
+ * The pool is the bundled memegen catalogue plus custom memes from --data (the plugin's
+ * data directory, which holds custom-memes.json), so the run uses what the learner sees.
  *
  * The adapter is a module with a default export:
  *   export default {
@@ -16,7 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { memegenMemes } from "../../src/library.ts";
+import { loadCustomMemes, memegenMemes } from "../../src/library.ts";
 import { EVAL_CONCEPTS } from "./concepts.ts";
 import {
 	type Complete,
@@ -48,6 +51,7 @@ async function main(): Promise<void> {
 	}
 	const adapter = (await import(pathToFileURL(path.resolve(adapterPath)).href))
 		.default as Adapter;
+	const dataDir = option("--data");
 	const limit = Number(option("--limit") ?? EVAL_CONCEPTS.length);
 	const outDir = path.resolve(option("--out") ?? "tests/eval/reports");
 	const concepts = EVAL_CONCEPTS.slice(
@@ -56,7 +60,10 @@ async function main(): Promise<void> {
 	);
 	const run = await runEval({
 		concepts,
-		memes: eligibleMemes(memegenMemes("")),
+		memes: eligibleMemes([
+			...(dataDir ? loadCustomMemes(path.resolve(dataDir)).memes : []),
+			...memegenMemes(""),
+		]),
 		generate: adapter.generate,
 		judge: adapter.judge,
 		generatorLabel: adapter.generatorLabel,

@@ -8,6 +8,7 @@ import type {
 	PluginModelSpec,
 } from "learnharness-plugin-api";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
+import { PICK_STEP } from "./config.ts";
 import { loadImage } from "./images.ts";
 import { loadCustomMemes, memegenMemes } from "./library.ts";
 import {
@@ -15,9 +16,10 @@ import {
 	fillRequest,
 	type ModelRequest,
 	PROMPT_VERSION,
+	pickRequest,
 	templateRequest,
 } from "./prompts.ts";
-import { coolingDown, pickMeme, recordUse } from "./scheduler.ts";
+import { coolingDown, pickMeme, recordUse, shortlist } from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
@@ -242,6 +244,45 @@ export function activate(ctx: PluginBackendContext): () => void {
 		}
 	}
 
+	/** Step 2: the model picks among memes that are not cooling down (cooldown is the
+	 * filter). If its answer is unusable, a random eligible meme is used instead. */
+	async function choose(
+		model: PluginModelSpec,
+		concept: Concept,
+		ids: readonly string[],
+		memes: readonly Meme[],
+	): Promise<string | undefined> {
+		const candidates = shortlist(
+			ids,
+			state.usage,
+			Date.now(),
+			PICK_STEP.candidates,
+		);
+		if (candidates.length < 2) return candidates[0];
+		const listed = candidates.map((id) => memes.find((m) => m.id === id)!);
+		try {
+			return await ask(model, pickRequest(concept, listed), (raw) => {
+				const choice =
+					raw && typeof raw === "object"
+						? (raw as { choice?: unknown }).choice
+						: undefined;
+				if (
+					typeof choice !== "number" ||
+					!Number.isInteger(choice) ||
+					choice < 1 ||
+					choice > candidates.length
+				)
+					throw new Error(
+						`choice must be a whole number from 1 to ${candidates.length}`,
+					);
+				return candidates[choice - 1]!;
+			});
+		} catch (error) {
+			if (!(error instanceof RejectedReply)) throw error;
+			return pickMeme(candidates, state.usage, Date.now());
+		}
+	}
+
 	/** Step 3, cached: a meme's template does not depend on the concept. */
 	async function templateFor(
 		meme: Meme,
@@ -308,13 +349,14 @@ export function activate(ctx: PluginBackendContext): () => void {
 		if (memes.every((meme) => tried.has(meme.id))) tried.clear();
 		let failure: unknown;
 		for (let attempt = 0; attempt < MEME_ATTEMPTS; attempt++) {
-			// Step 2: random, skipping memes that are cooling down.
-			const id = pickMeme(
+			// Step 2: the model chooses a fitting meme among those not cooling down.
+			const id = await choose(
+				model,
+				concept,
 				memes
 					.map((meme) => meme.id)
 					.filter((candidate) => !tried.has(candidate)),
-				state.usage,
-				Date.now(),
+				memes,
 			);
 			const meme = memes.find((candidate) => candidate.id === id);
 			if (!meme) break;

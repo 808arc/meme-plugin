@@ -34,18 +34,27 @@ Text that replaces the original on the image, creating the learn-through-memes e
 
 ## Use
 
-In a teaching or practice session, press **Meme this** in the top bar. The plugin reads
-the question on screen, makes the meme and shows it over the page body. **Another meme**
-makes a new one with a different image; **Copy caption** copies the text. Pressing
-**Meme this** again closes it. The action is also listed under Settings → Keyboard,
-unbound until you assign a chord.
+### Quick start
 
-- Meme states the answer. Open after trying the question, not before.
-- Unrevealed question is not read.
-- No question on screen: uses teacher's latest message, or asks you to type a concept.
+1. In a teaching or practice session, try the question first.
+2. Press **Meme this** in the top bar.
+3. The meme appears over the page body.
 
-Each meme costs one short model request, plus one more the first time a given meme is
-used (its template is then cached).
+| Action | Result |
+| --- | --- |
+| **Meme this** | Make a meme from the question on screen. |
+| **Another meme** | Same concept, different image. |
+| **Copy caption** | Copy the text. |
+| **Meme this** again | Close. |
+
+A chord for **Meme this** is set in Settings → Keyboard. It is unbound until you assign one.
+
+### Good to know
+
+- The meme states the answer. Open it after you have tried the question, not before.
+- An unrevealed question is not read.
+- No question on screen: the plugin uses the teacher's latest message, or asks you to type a concept.
+- Each meme costs one short model request. The first use of a given meme costs one more, to cache its template.
 
 ## Install
 
@@ -146,6 +155,9 @@ original caption. Plugin assembles final text; fixed phrasing cannot be reworded
 
 Open issues. Not in the current build.
 
+- Meme modes: Answer (today), Hint, Think, which make the learner think before reveal ([#17](https://github.com/808arc/meme-plugin/issues/17)).
+- Buttonless mode: memes appear on their own after reveal. Off by default ([#18](https://github.com/808arc/meme-plugin/issues/18)).
+- Like or dislike any meme; save favourites in a local library ([#19](https://github.com/808arc/meme-plugin/issues/19)).
 - Pick a meme that fits the concept; ask for humor that stays accurate ([#4](https://github.com/808arc/meme-plugin/issues/4)).
 - Eval: score fit, humor and accuracy before and after prompt changes ([#5](https://github.com/808arc/meme-plugin/issues/5)).
 - Check the caption's fact against the question's answer options ([#7](https://github.com/808arc/meme-plugin/issues/7)).

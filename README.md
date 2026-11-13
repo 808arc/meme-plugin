@@ -1,11 +1,11 @@
 # meme-plugin
 
-Turns each concept learnharness asks about into a meme.
+Turns each concept asked by learnharness about into a meme.
 
 ## How it works
 
 1. Take the concept from the learnharness prompt.
-2. Pick random modern image meme. Store used; skip during cooldown (reverse spaced repetition).
+2. Pick random image meme. Store used; skip during cooldown (reverse spaced repetition). Picks ignore the concept for now ([#4](https://github.com/808arc/meme-plugin/issues/4)).
 3. Reduce caption to template: fixed phrasing + fillable slots.
 4. Fill the slots with facts about the concept.
 5. Optionally add emphasis in the meme character's voice.
@@ -140,6 +140,20 @@ original caption. Plugin assembles final text; fixed phrasing cannot be reworded
 - Facts come from the model and are not checked against a source.
 - Text placement follows memegen's box positions; rotated boxes are approximate.
 - Animated memes are shown as a still image.
+- Bundled catalogue is dated. Tagging and filtering planned ([#6](https://github.com/808arc/meme-plugin/issues/6)).
+
+## Planned
+
+Open issues. Not in the current build.
+
+- Pick a meme that fits the concept; ask for humor that stays accurate ([#4](https://github.com/808arc/meme-plugin/issues/4)).
+- Eval: score fit, humor and accuracy before and after prompt changes ([#5](https://github.com/808arc/meme-plugin/issues/5)).
+- Check the caption's fact against the question's answer options ([#7](https://github.com/808arc/meme-plugin/issues/7)).
+- Inline meme in the question card, with progress states, 👍/👎 and copy image ([#8](https://github.com/808arc/meme-plugin/issues/8)).
+- Reuse earlier memes for the same concept, stored locally ([#9](https://github.com/808arc/meme-plugin/issues/9)).
+- Teacher agent tool to drop memes into the chat. Needs design ([#10](https://github.com/808arc/meme-plugin/issues/10)).
+- Opt-in web search for existing memes. Would send the concept to outside services, so it would be off by default and listed under "What leaves your machine" ([#11](https://github.com/808arc/meme-plugin/issues/11)).
+- CI, and a release zip of `dist/`, so installs don't need a local build ([#3](https://github.com/808arc/meme-plugin/issues/3)).
 
 ## Research
 

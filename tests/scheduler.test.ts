@@ -5,6 +5,8 @@ import {
 	coolingDown,
 	MAX_COOLDOWN_DAYS,
 	pickMeme,
+	pickPreferred,
+	recordRejection,
 	recordUse,
 	shortlist,
 } from "../src/scheduler.ts";
@@ -94,4 +96,50 @@ test("the shortlist offers only memes that are not cooling down, up to the limit
 		["b", "c"],
 	);
 	assert.deepEqual(shortlist([], usage, 100, 20), []);
+});
+
+test("own memes are preferred while one is eligible, then the rest rotate in", () => {
+	const ids = ["custom:x", "custom:y", "memegen:a", "memegen:b"];
+	const own = new Set(["custom:x", "custom:y"]);
+	const now = 1_000_000;
+	for (const roll of [0, 0.5, 0.999])
+		assert.ok(own.has(pickPreferred(ids, own, {}, now, 1, () => roll)!));
+	const usage: Record<string, Usage> = {
+		"custom:x": recordUse(undefined, now, settings),
+	};
+	assert.equal(
+		pickPreferred(ids, own, usage, now, 1, () => 0.9),
+		"custom:y",
+	);
+	usage["custom:y"] = recordUse(undefined, now, settings);
+	// Every own meme cooling down: the catalogue takes over.
+	for (const roll of [0, 0.999])
+		assert.ok(!own.has(pickPreferred(ids, own, usage, now, 1, () => roll)!));
+	// A share below 1 mixes the catalogue in: a roll above the share picks from all ids.
+	assert.equal(
+		pickPreferred(ids, own, {}, now, 0.5, () => 0.2),
+		"custom:x",
+	);
+	assert.equal(
+		pickPreferred(ids, own, {}, now, 0.5, () => 0.6),
+		"memegen:a",
+	);
+	assert.equal(pickPreferred([], own, {}, now, 1), undefined);
+});
+
+test("a rejection is one more use, kept out at least the minimum", () => {
+	const now = 1_000_000;
+	const reject = { ...settings, rejectCooldownDays: 1 };
+	const first = recordUse(undefined, now, settings);
+	assert.deepEqual(recordRejection(first, now, reject), {
+		uses: 2,
+		lastUsedAt: now,
+		dueAt: now + 28 * DAY,
+	});
+	const off = { cooldownDays: 0, cooldownGrowth: 2, rejectCooldownDays: 1 };
+	assert.equal(recordRejection(undefined, now, off).dueAt, now + DAY);
+	assert.equal(
+		recordRejection(undefined, now, { ...off, rejectCooldownDays: 0 }).dueAt,
+		now,
+	);
 });

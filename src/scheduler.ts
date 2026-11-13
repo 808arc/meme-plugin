@@ -25,6 +25,23 @@ export function recordUse(
 	return { uses, lastUsedAt: now, dueAt: now + cooldownMs(uses, settings) };
 }
 
+/** "Not this one" (#21): one more use, and at least `rejectCooldownDays` away even
+ * when the normal cooldown is off. */
+export function recordRejection(
+	previous: Usage | undefined,
+	now: number,
+	settings: Pick<
+		Settings,
+		"cooldownDays" | "cooldownGrowth" | "rejectCooldownDays"
+	>,
+): Usage {
+	const use = recordUse(previous, now, settings);
+	return {
+		...use,
+		dueAt: Math.max(use.dueAt, now + settings.rejectCooldownDays * DAY),
+	};
+}
+
 export function coolingDown(
 	usage: Readonly<Record<string, Usage>>,
 	id: string,
@@ -72,4 +89,39 @@ export function pickMeme(
 	if (eligible.length) return at(eligible);
 	const soonest = Math.min(...ids.map((id) => usage[id]!.dueAt));
 	return at(ids.filter((id) => usage[id]!.dueAt === soonest));
+}
+
+/** Source order (#21): `preferred` ids (the learner's own memes) are tried first.
+ * While one of them is out of cooldown, the candidates are only those, with
+ * probability `share`; otherwise all ids. A preference, not a filter: a used
+ * preferred meme cools down like any other, and the rest of the pool takes over. */
+export function preferredPool(
+	ids: readonly string[],
+	preferred: ReadonlySet<string>,
+	usage: Readonly<Record<string, Usage>>,
+	now: number,
+	share: number,
+	random: () => number = Math.random,
+): readonly string[] {
+	const eligible = ids.filter(
+		(id) => preferred.has(id) && !coolingDown(usage, id, now),
+	);
+	return eligible.length && (share >= 1 || random() < share) ? eligible : ids;
+}
+
+/** One random pick over preferredPool (#21). */
+export function pickPreferred(
+	ids: readonly string[],
+	preferred: ReadonlySet<string>,
+	usage: Readonly<Record<string, Usage>>,
+	now: number,
+	share: number,
+	random: () => number = Math.random,
+): string | undefined {
+	return pickMeme(
+		preferredPool(ids, preferred, usage, now, share, random),
+		usage,
+		now,
+		random,
+	);
 }

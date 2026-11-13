@@ -57,10 +57,12 @@ async function download(url: string, signal: AbortSignal): Promise<Buffer> {
 	return bytes;
 }
 
+/** `customDirectory` holds custom-images/ (#21: may be outside data/, only read). */
 export async function loadImage(
 	meme: Pick<Meme, "image" | "origin">,
 	dataDirectory: string,
 	signal: AbortSignal,
+	customDirectory: string = dataDirectory,
 ): Promise<MemeImage | null> {
 	if (!meme.image) return null;
 	if (!/^https?:\/\//.test(meme.image)) {
@@ -68,7 +70,7 @@ export async function loadImage(
 		if (meme.origin !== "custom" || !IMAGE_FILE.test(meme.image))
 			throw new Error("Unsupported image location");
 		return encode(
-			readBounded(path.join(dataDirectory, CUSTOM_IMAGES, meme.image)),
+			readBounded(path.join(customDirectory, CUSTOM_IMAGES, meme.image)),
 		);
 	}
 	const cache = path.join(dataDirectory, IMAGE_CACHE);

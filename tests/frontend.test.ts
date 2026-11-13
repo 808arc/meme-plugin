@@ -41,8 +41,12 @@ const state: PluginState = {
 		cooldownGrowth: 2,
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
+		ownMemesShare: 100,
+		rejectCooldownDays: 1,
+		customFolder: "",
 	},
 	pool: { memegen: 209, custom: 1, coolingDown: 3 },
+	customFolder: "/plugins/meme-plugin/data",
 	problems: ["custom-memes.json entry 2: bad"],
 };
 
@@ -337,6 +341,14 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 		operation: "generate",
 		input: { prompt: "Who backed CUDA?", excludeMemeId: "custom:a" },
 	});
+	// Rejecting it also asks for another, and tells the backend to cool it down longer.
+	assert.equal(f.button("Not this one").props.disabled, false);
+	await (f.button("Not this one").props.onClick as () => Promise<void>)();
+	assert.deepEqual(f.calls[4], {
+		operation: "generate",
+		input: { prompt: "Who backed CUDA?", rejectMemeId: "custom:a" },
+	});
+	assert.equal(f.button("Not this one").props.disabled, false);
 });
 
 test("pressing the action again closes its surface, and a closed surface reopens", async (t) => {
@@ -449,7 +461,12 @@ test("an unrevealed question is not read; with no question the learner types a c
 
 test("settings publish only what the backend accepted", async (t) => {
 	let current = state;
+	let exportFails = false;
 	const f = fixture(t, (operation, input) => {
+		if (operation === "export-memes") {
+			if (exportFails) throw new Error("There are no custom memes to export.");
+			return { path: "/data/exports/memes-1", images: 2 };
+		}
 		if (operation === "save-settings") {
 			if ((input as { cooldownDays?: number }).cooldownDays === 999)
 				throw new Error("cooldownDays must be a number from 0 to 365");
@@ -478,9 +495,25 @@ test("settings publish only what the backend accepted", async (t) => {
 			["emphasis", "toggle", true],
 			["cooldownDays", "number", 14],
 			["cooldownGrowth", "number", 2],
+			["rejectCooldownDays", "number", 1],
 			["useMemegen", "toggle", true],
 			["imageBaseUrl", "text", "https://api.memegen.link"],
+			["ownMemesShare", "slider", 100],
+			["customFolder", "text", ""],
 		],
+	);
+	assert.match(
+		container.textContent!,
+		/Custom memes are read from \/plugins\/meme-plugin\/data\./,
+	);
+	const folder = rows().find((row) => row.key === "customFolder")!;
+	assert.equal(
+		folder.type === "text" && folder.validate!("/Users/me/memes"),
+		undefined,
+	);
+	assert.match(
+		(folder.type === "text" && folder.validate!("memes")) || "",
+		/absolute path/,
 	);
 	assert.match(
 		container.textContent!,
@@ -528,6 +561,14 @@ test("settings publish only what the backend accepted", async (t) => {
 	assert.equal(picker.props.value, undefined);
 	await (f.button("Reset cooldowns").props.onClick as () => Promise<void>)();
 	assert.match(container.textContent!, /0 cooling down/);
+	await (f.button("Export my memes").props.onClick as () => Promise<void>)();
+	assert.match(
+		container.textContent!,
+		/Exported custom-memes.json and 2 images to \/data\/exports\/memes-1/,
+	);
+	exportFails = true;
+	await (f.button("Export my memes").props.onClick as () => Promise<void>)();
+	assert.match(container.textContent!, /no custom memes to export/);
 });
 
 test("an unreliable fact shows a short message and the button still makes another meme", async (t) => {

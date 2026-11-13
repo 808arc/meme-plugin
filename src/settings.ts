@@ -1,5 +1,6 @@
 /** Settings defaults and validation, shared by the backend (authority) and the
  * settings page (inline validation). */
+import { OWN_MEMES } from "./config.ts";
 import type { Settings } from "./types.ts";
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -9,12 +10,28 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	cooldownGrowth: 2,
 	useMemegen: true,
 	imageBaseUrl: "https://api.memegen.link",
+	ownMemesShare: OWN_MEMES.sharePercent,
+	rejectCooldownDays: OWN_MEMES.rejectCooldownDays,
+	customFolder: OWN_MEMES.folder,
 });
 
 export const LIMITS = Object.freeze({
 	cooldownDays: { min: 0, max: 365 },
 	cooldownGrowth: { min: 1, max: 10 },
+	ownMemesShare: { min: 0, max: 100 },
+	rejectCooldownDays: { min: 0, max: 365 },
 });
+
+/** #21: empty (the plugin's data/ folder) or an absolute path. No Node imports here:
+ * the settings page shares this check. */
+export function customFolderProblem(value: string): string | undefined {
+	if (!value) return undefined;
+	if (value.length > 1024 || /[\u0000-\u001f]/.test(value))
+		return "Enter a folder path, or leave empty to use the plugin's data folder.";
+	if (!/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(value))
+		return "Use an absolute path, for example /Users/me/memes.";
+	return undefined;
+}
 
 /** Undefined when acceptable, otherwise the message to show. Empty means "no images". */
 export function imageBaseUrlProblem(value: string): string | undefined {
@@ -32,7 +49,7 @@ export function imageBaseUrlProblem(value: string): string | undefined {
 	return undefined;
 }
 
-function range(value: unknown, key: "cooldownDays" | "cooldownGrowth"): number {
+function range(value: unknown, key: keyof typeof LIMITS): number {
 	const { min, max } = LIMITS[key];
 	if (
 		typeof value !== "number" ||
@@ -80,8 +97,19 @@ export function applySettingsPatch(
 				break;
 			case "cooldownDays":
 			case "cooldownGrowth":
+			case "ownMemesShare":
+			case "rejectCooldownDays":
 				next[key] = range(value, key);
 				break;
+			case "customFolder": {
+				if (typeof value !== "string")
+					throw new Error("customFolder must be text");
+				const trimmed = value.trim();
+				const problem = customFolderProblem(trimmed);
+				if (problem) throw new Error(problem);
+				next.customFolder = trimmed;
+				break;
+			}
 			case "imageBaseUrl": {
 				if (typeof value !== "string")
 					throw new Error("imageBaseUrl must be text");

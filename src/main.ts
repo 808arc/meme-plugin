@@ -9,10 +9,15 @@ import type {
 import { type ConceptResult, conceptFromView } from "./concept.ts";
 import { STAGE_TOPIC, STAGES } from "./config.ts";
 import { element, memePng, mountMeme } from "./render.ts";
-import { imageBaseUrlProblem, LIMITS } from "./settings.ts";
+import {
+	customFolderProblem,
+	imageBaseUrlProblem,
+	LIMITS,
+} from "./settings.ts";
 import type {
 	Concept,
 	GeneratedMeme,
+	MemeExport,
 	MemeImage,
 	PluginState,
 	Settings,
@@ -48,11 +53,19 @@ function mountSurface(
 	const credit = element("p", "meme-plugin-credit");
 	const actions = element("div", "meme-plugin-actions");
 	const anotherSlot = element("span", ""),
+		rejectSlot = element("span", ""),
 		copySlot = element("span", ""),
 		copyImageSlot = element("span", ""),
 		upSlot = element("span", ""),
 		downSlot = element("span", "");
-	actions.append(anotherSlot, copySlot, copyImageSlot, upSlot, downSlot);
+	actions.append(
+		anotherSlot,
+		rejectSlot,
+		copySlot,
+		copyImageSlot,
+		upSlot,
+		downSlot,
+	);
 	const notice = element("p", "meme-plugin-notice");
 	root.append(heading, conceptLine, collapse, fact, credit, actions, notice);
 	container.append(root);
@@ -104,12 +117,14 @@ function mountSurface(
 		paintRating();
 	};
 
-	const run = async () => {
+	/** `rejecting`: the learner turned down the meme on screen ("Not this one"). */
+	const run = async (rejecting = false) => {
 		if (!concept) return;
 		const turn = ++sequence;
 		const stale = () => signal.aborted || turn !== sequence;
 		conceptLine.textContent = concept.prompt;
 		another.update({ disabled: true });
+		reject.update({ disabled: true });
 		copy.update({ disabled: true });
 		copyImage.update({ disabled: true });
 		up.update({ disabled: true });
@@ -128,11 +143,16 @@ function mountSurface(
 			if (label) status(label);
 		});
 		try {
-			// Asking again steers away from the meme that is on screen.
+			// Asking again steers away from the meme that is on screen; rejecting
+			// it also lengthens its cooldown.
 			const next = await ctx.call<GeneratedMeme>("generate", {
 				...concept,
 				requestId,
-				...(result ? { excludeMemeId: result.meme.id } : {}),
+				...(result
+					? {
+							[rejecting ? "rejectMemeId" : "excludeMemeId"]: result.meme.id,
+						}
+					: {}),
 			});
 			done = true;
 			if (stale()) return;
@@ -150,6 +170,7 @@ function mountSurface(
 			}
 			show(next, picture);
 			another.update({ disabled: false, label: "Another meme" });
+			reject.update({ disabled: false });
 			copy.update({ disabled: false });
 			copyImage.update({ disabled: !picture });
 			// Rating needs the stored handle; a meme without one cannot be rated.
@@ -183,7 +204,22 @@ function mountSurface(
 
 	const another = ctx.ui.mountButton(
 		anotherSlot,
-		{ label: "Another meme", variant: "outline", disabled: true, onClick: run },
+		{
+			label: "Another meme",
+			variant: "outline",
+			disabled: true,
+			onClick: () => run(),
+		},
+		{ signal },
+	);
+	const reject = ctx.ui.mountButton(
+		rejectSlot,
+		{
+			label: "Not this one",
+			variant: "ghost",
+			disabled: true,
+			onClick: () => run(true),
+		},
 		{ signal },
 	);
 	const copy = ctx.ui.mountButton(
@@ -320,6 +356,17 @@ function settingsRows(
 			onChange: (cooldownGrowth) => save({ cooldownGrowth }),
 		},
 		{
+			type: "number",
+			key: "rejectCooldownDays",
+			label: "Minimum cooldown after rejecting (days)",
+			description:
+				"A meme you reject with Not this one stays out at least this long, even when the cooldown is 0.",
+			value: settings.rejectCooldownDays,
+			...LIMITS.rejectCooldownDays,
+			step: 1,
+			onChange: (rejectCooldownDays) => save({ rejectCooldownDays }),
+		},
+		{
 			type: "toggle",
 			key: "useMemegen",
 			label: "Use the bundled catalogue",
@@ -337,6 +384,27 @@ function settingsRows(
 			validate: (value) =>
 				imageBaseUrlProblem(value.trim().replace(/\/+$/, "")),
 			onChange: (imageBaseUrl) => save({ imageBaseUrl }),
+		},
+		{
+			type: "slider",
+			key: "ownMemesShare",
+			label: "Own memes first (%)",
+			description:
+				"Chance a meme comes from your own memes while one is out of cooldown. 100: always, then the catalogue.",
+			value: settings.ownMemesShare,
+			...LIMITS.ownMemesShare,
+			step: 5,
+			onChange: (ownMemesShare) => save({ ownMemesShare }),
+		},
+		{
+			type: "text",
+			key: "customFolder",
+			label: "Custom memes folder",
+			description:
+				"Folder with custom-memes.json and custom-images/. Only read, never changed. Leave empty for the plugin's data folder.",
+			value: settings.customFolder,
+			validate: (value) => customFolderProblem(value.trim()),
+			onChange: (customFolder) => save({ customFolder }),
 		},
 	];
 }
@@ -369,6 +437,8 @@ function mountSettings(
 		const rowsSlot = element("div", "");
 		const summary = element("p", "meme-plugin-settings-note");
 		const resetSlot = element("div", "");
+		const exportSlot = element("div", "");
+		const exported = element("p", "meme-plugin-settings-note");
 		const problems = element("ul", "meme-plugin-settings-problems");
 		root.append(
 			element("p", "meme-plugin-settings-label", "Model"),
@@ -381,6 +451,8 @@ function mountSettings(
 			rowsSlot,
 			summary,
 			resetSlot,
+			exportSlot,
+			exported,
 			problems,
 		);
 
@@ -393,7 +465,7 @@ function mountSettings(
 			rows.update({
 				rows: settingsRows(state.settings, state.pool.memegen, save),
 			});
-			summary.textContent = `Pool: ${state.pool.memegen} bundled and ${state.pool.custom} custom memes, ${state.pool.coolingDown} cooling down.`;
+			summary.textContent = `Pool: ${state.pool.memegen} bundled and ${state.pool.custom} custom memes, ${state.pool.coolingDown} cooling down. Custom memes are read from ${state.customFolder}.`;
 			problems.replaceChildren(
 				...state.problems.map((problem) => element("li", "", problem)),
 			);
@@ -433,6 +505,26 @@ function mountSettings(
 				size: "sm",
 				onClick: async () =>
 					publish(await ctx.call<PluginState>("reset-usage")),
+			},
+			{ signal },
+		);
+		// No save dialog in the plugin API: the copy goes under data/exports/ and the
+		// path is shown so the learner can move it.
+		ctx.ui.mountButton(
+			exportSlot,
+			{
+				label: "Export my memes",
+				variant: "outline",
+				size: "sm",
+				onClick: async () => {
+					try {
+						const result = await ctx.call<MemeExport>("export-memes");
+						if (!signal.aborted)
+							exported.textContent = `Exported custom-memes.json and ${result.images} images to ${result.path}`;
+					} catch (error) {
+						if (!signal.aborted) exported.textContent = message(error);
+					}
+				},
 			},
 			{ signal },
 		);

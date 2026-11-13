@@ -130,7 +130,12 @@ export interface Settings {
 	searchAgent: { provider: string; id: string } | null;
 	/** #17: what the caption does. Answer states the fact (default). */
 	mode: MemeMode;
+	/** Experimental: when the teacher agent may add a meme to the chat (tool `meme_teach`). */
+	teacherMemes: TeacherMemes;
 }
+
+/** off: never. teacher: the teacher decides, within the cap. wrong: only after a wrong answer. */
+export type TeacherMemes = "off" | "teacher" | "wrong";
 
 export interface Usage {
 	uses: number;

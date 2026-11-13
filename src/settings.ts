@@ -1,7 +1,13 @@
 /** Settings defaults and validation, shared by the backend (authority) and the
  * settings page (inline validation). */
 import { MEME_MODES, type MemeMode, OWN_MEMES } from "./config.ts";
-import type { Settings } from "./types.ts";
+import type { Settings, TeacherMemes } from "./types.ts";
+
+export const TEACHER_MEMES: readonly TeacherMemes[] = Object.freeze([
+	"off",
+	"teacher",
+	"wrong",
+]);
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	model: null,
@@ -16,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	webSearch: true,
 	searchAgent: null,
 	mode: MEME_MODES.defaultMode,
+	teacherMemes: "off",
 });
 
 export const LIMITS = Object.freeze({
@@ -145,6 +152,13 @@ export function applySettingsPatch(
 				if (!MEME_MODES.modes.includes(value as MemeMode))
 					throw new Error(`mode must be one of ${MEME_MODES.modes.join(", ")}`);
 				next.mode = value as MemeMode;
+				break;
+			case "teacherMemes":
+				if (!TEACHER_MEMES.includes(value as TeacherMemes))
+					throw new Error(
+						`teacherMemes must be one of ${TEACHER_MEMES.join(", ")}`,
+					);
+				next.teacherMemes = value as TeacherMemes;
 				break;
 			default:
 				throw new Error(`Unknown setting: ${key}`);

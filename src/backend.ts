@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
 	PluginBackendContext,
+	PluginCallPurpose,
 	PluginModelSpec,
 } from "learnharness-plugin-api";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
@@ -15,6 +16,7 @@ import {
 	OWN_MEMES,
 	PICK_STEP,
 	STAGE_TOPIC,
+	TEACHER_TOOL,
 } from "./config.ts";
 import {
 	agreementRequest,
@@ -79,6 +81,7 @@ import type {
 	MemeImage,
 	PluginState,
 	Settings,
+	TeacherMemes,
 	Template,
 	Usage,
 } from "./types.ts";
@@ -88,6 +91,17 @@ const STATE_FILE = "state.json";
 /** A meme whose caption cannot be templated is skipped; try this many before giving up. */
 const MEME_ATTEMPTS = 3;
 const MAX_OUTPUT_TOKENS = 2048;
+const TOOL_NAME = "meme_teach";
+/** Reveal rule (prompt-only, see docs/teacher-meme-tool.md): the tool only ever gets a
+ * concept, and only after the learner has tried. */
+const REVEAL_RULE = `Only call it after the learner has answered the current question or it has been revealed. Never call it while a question is pending. Pass the concept as "prompt" and never state the answer to an unrevealed question. If the tool is not offered in a turn, the meme limit is reached: do not mention it.`;
+const TEACHER_INSTRUCTIONS: Record<Exclude<TeacherMemes, "off">, string> = {
+	teacher: `A meme plugin is enabled. You may call the ${TOOL_NAME} tool, without being asked, when a meme would help a concept stick. ${REVEAL_RULE}`,
+	wrong: `A meme plugin is enabled. Call the ${TOOL_NAME} tool only right after the learner answered a question incorrectly, to help the correct answer stick once it has been revealed. ${REVEAL_RULE}`,
+};
+
+/** Local calendar day, for the automatic-meme budget. */
+const dayKey = (now: number) => new Date(now).toLocaleDateString("en-CA");
 
 interface CachedTemplate extends Template {
 	captionHash: string;
@@ -98,6 +112,8 @@ interface Stored {
 	settings: Settings;
 	usage: Record<string, Usage>;
 	templates: Record<string, CachedTemplate>;
+	/** Automatic memes made today; the shared budget in config.ts. */
+	automatic: { day: string; count: number };
 }
 
 /** The model answered, but not with something the plugin can accept. */
@@ -120,6 +136,7 @@ function readState(file: string): Stored {
 				settings: readSettings(undefined),
 				usage: {},
 				templates: {},
+				automatic: { day: "", count: 0 },
 			};
 		throw new Error(
 			`Meme plugin could not read ${STATE_FILE}: ${(error as Error).message}`,
@@ -160,7 +177,18 @@ function readState(file: string): Stored {
 		settings: readSettings(stored.settings),
 		usage,
 		templates,
+		automatic: readAutomatic(stored.automatic),
 	};
+}
+
+function readAutomatic(value: unknown): Stored["automatic"] {
+	const item = value as Partial<Stored["automatic"]> | null | undefined;
+	return item &&
+		typeof item.day === "string" &&
+		Number.isInteger(item.count) &&
+		item.count! >= 0
+		? { day: item.day, count: item.count! }
+		: { day: "", count: 0 };
 }
 
 export interface BackendOptions {
@@ -268,6 +296,7 @@ export function activate(
 	/** One model exchange that must end in JSON accepted by `parse`. The model gets a
 	 * single chance to correct a rejected reply, with the reason. */
 	async function ask<T>(
+		purpose: PluginCallPurpose,
 		model: PluginModelSpec,
 		request: ModelRequest,
 		parse: (raw: unknown) => T,
@@ -278,10 +307,10 @@ export function activate(
 			{ role: "user", content: request.user, timestamp: Date.now() },
 		];
 		for (let attempt = 0; ; attempt++) {
-			// The learner clicked the action: user-initiated, never background work.
+			// "user" when the learner pressed Meme this; "background" when the teacher chose to.
 			const reply = await ctx.inference.complete({
 				model,
-				purpose: "user",
+				purpose,
 				context: { systemPrompt: request.systemPrompt, messages },
 				options: { maxTokens: MAX_OUTPUT_TOKENS },
 				signal: ctx.signal,
@@ -315,6 +344,7 @@ export function activate(
 	/** Step 2: the model picks among memes that are not cooling down (cooldown is the
 	 * filter). If its answer is unusable, a random eligible meme is used instead. */
 	async function choose(
+		purpose: PluginCallPurpose,
 		model: PluginModelSpec,
 		concept: Concept,
 		ids: readonly string[],
@@ -329,7 +359,7 @@ export function activate(
 		if (candidates.length < 2) return candidates[0];
 		const listed = candidates.map((id) => memes.find((m) => m.id === id)!);
 		try {
-			return await ask(model, pickRequest(concept, listed), (raw) => {
+			return await ask(purpose, model, pickRequest(concept, listed), (raw) => {
 				const choice =
 					raw && typeof raw === "object"
 						? (raw as { choice?: unknown }).choice
@@ -355,6 +385,7 @@ export function activate(
 	async function templateFor(
 		meme: Meme,
 		model: PluginModelSpec,
+		purpose: PluginCallPurpose,
 	): Promise<Template> {
 		const captionHash = createHash("sha256")
 			.update(meme.caption.join("\n"))
@@ -373,7 +404,7 @@ export function activate(
 				/* hand-edited or stale: rebuild */
 			}
 		}
-		const template = await ask(model, templateRequest(meme), (raw) =>
+		const template = await ask(purpose, model, templateRequest(meme), (raw) =>
 			parseTemplate(raw, meme.caption),
 		);
 		save({
@@ -389,6 +420,7 @@ export function activate(
 	/** Steps 4 and 5 plus the fact check. A fact that disagrees with the question is
 	 * regenerated, a bounded number of times; after that the meme is not shown at all. */
 	async function fillChecked(
+		purpose: PluginCallPurpose,
 		model: PluginModelSpec,
 		meme: Meme,
 		template: Template,
@@ -397,6 +429,7 @@ export function activate(
 		let avoid: string | undefined;
 		for (let attempt = 1; ; attempt++) {
 			const filling = await ask(
+				purpose,
 				model,
 				fillRequest({
 					meme,
@@ -411,6 +444,7 @@ export function activate(
 			const verdict =
 				(concept.answer && quickAgreement(filling.fact, concept.answer)) ??
 				(await ask(
+					purpose,
 					model,
 					agreementRequest({ concept, fact: filling.fact }),
 					parseAgreement,
@@ -444,6 +478,7 @@ export function activate(
 	 * Each prefiltered hit is judged by the model (safety, relevance, accuracy) and its
 	 * image must load; any failure rejects that hit (fail closed) and tries the next. */
 	async function webResult(
+		purpose: PluginCallPurpose,
 		concept: Concept,
 		exclude: string | undefined,
 	): Promise<GeneratedMeme | null> {
@@ -460,6 +495,7 @@ export function activate(
 			try {
 				const model = await resolveModel();
 				const judgement = await ask(
+					purpose,
 					model,
 					judgeRequest(hit, concept),
 					parseJudgement,
@@ -497,7 +533,10 @@ export function activate(
 		return null;
 	}
 
-	async function generate(input: unknown): Promise<GeneratedMeme> {
+	async function generate(
+		input: unknown,
+		purpose: PluginCallPurpose,
+	): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
 		if (!prompt) throw new Error("There is no question to turn into a meme.");
@@ -572,7 +611,7 @@ export function activate(
 		}
 
 		// Source 4 of the README: an existing meme found on the web beats generating one.
-		const web = await webResult(concept, exclude);
+		const web = await webResult(purpose, concept, exclude);
 		if (web) return web;
 
 		const model = await resolveModel();
@@ -589,6 +628,7 @@ export function activate(
 			// chooses a fitting meme among those not cooling down (#4).
 			const candidates = memes.filter((meme) => !tried.has(meme.id));
 			const id = await choose(
+				purpose,
 				model,
 				concept,
 				preferredPool(
@@ -610,7 +650,7 @@ export function activate(
 			stage("writing");
 			let template: Template;
 			try {
-				template = await templateFor(meme, model);
+				template = await templateFor(meme, model, purpose);
 			} catch (error) {
 				alive();
 				// A failed request (quota, network) is not the meme's fault: report it as is.
@@ -625,10 +665,11 @@ export function activate(
 			// correction, another meme is tried.
 			let filling: Filling;
 			if (mode === "answer")
-				filling = await fillChecked(model, meme, template, concept);
+				filling = await fillChecked(purpose, model, meme, template, concept);
 			else {
 				try {
 					filling = await ask(
+						purpose,
 						model,
 						modeFillRequest(mode, { meme, template, concept, early }),
 						(raw) => parseModeFilling(raw, template, options),
@@ -711,7 +752,111 @@ export function activate(
 		return { path: target, images };
 	}
 
+	// One paid request chain at a time, however many windows or tool calls ask.
+	const guarded = async (run: () => Promise<GeneratedMeme>) => {
+		alive();
+		if (generating) throw new Error("A meme is already being made.");
+		generating = true;
+		try {
+			return await run();
+		} finally {
+			generating = false;
+		}
+	};
+
+	/** Teacher turns per chat (one per tool-loadout request) and the turn of the last meme. */
+	const turns = new Map<string, { turn: number; memeTurn: number | null }>();
+	const budgetLeft = () => {
+		const today = dayKey(Date.now());
+		const used = state.automatic.day === today ? state.automatic.count : 0;
+		return used < TEACHER_TOOL.automaticMemesPerDay;
+	};
+	const capReached = (chat: { turn: number; memeTurn: number | null }) =>
+		chat.memeTurn !== null &&
+		chat.turn - chat.memeTurn < TEACHER_TOOL.turnsPerMeme;
+
+	const teacherTool = (chat: { turn: number; memeTurn: number | null }) => ({
+		name: TOOL_NAME,
+		label: "Teacher meme",
+		description:
+			"Put one meme in the chat to help a concept stick. Only after the learner has tried the question; never reveal an unrevealed answer.",
+		parameters: {
+			type: "object",
+			properties: {
+				prompt: { type: "string", minLength: 1, maxLength: MAX_PROMPT_LENGTH },
+				context: { type: "string", maxLength: MAX_CONTEXT_LENGTH },
+			},
+			required: ["prompt"],
+			additionalProperties: false,
+		},
+		execute: async (
+			_toolCallId: string,
+			input: unknown,
+			signal?: AbortSignal,
+		) => {
+			alive();
+			if (signal?.aborted) throw new Error("Meme tool cancelled");
+			if (capReached(chat))
+				throw new Error("Meme limit for this part of the lesson reached.");
+			if (!budgetLeft())
+				throw new Error("Today's automatic meme budget is used up.");
+			// Not asked for by the learner: automatic work, classified as background.
+			const meme = await guarded(() => generate(input, "background"));
+			chat.memeTurn = chat.turn;
+			const today = dayKey(Date.now());
+			save({
+				...state,
+				automatic: {
+					day: today,
+					count:
+						(state.automatic.day === today ? state.automatic.count : 0) + 1,
+				},
+			});
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Meme shown to the learner: ${meme.lines.filter(Boolean).join(" / ")}. Fact it teaches: ${meme.fact}`,
+					},
+				],
+				details: meme,
+			};
+		},
+	});
+
+	// Teacher tool and instructions exist only while the setting is on; changes apply to future turns.
+	let teacherRelease: (() => void)[] = [];
+	const syncTeacherTool = () => {
+		for (const release of teacherRelease.splice(0)) release();
+		const mode = state.settings.teacherMemes;
+		if (disposed || mode === "off") return;
+		teacherRelease = [
+			ctx.registerInstructions({
+				agents: ["teacher"],
+				text: TEACHER_INSTRUCTIONS[mode],
+			}),
+			ctx.registerTools({
+				// Teaching sessions only.
+				agents: ["teacher"],
+				create: (context) => {
+					const chat = turns.get(context.chatId) ?? {
+						turn: 0,
+						memeTurn: null,
+					};
+					turns.set(context.chatId, chat);
+					chat.turn++;
+					// Over the cap or budget, the tool is simply not offered this turn.
+					return capReached(chat) || !budgetLeft() ? [] : [teacherTool(chat)];
+				},
+			}),
+		];
+	};
+	syncTeacherTool();
+
 	const unregister = [
+		() => {
+			for (const release of teacherRelease.splice(0)) release();
+		},
 		ctx.handle("get-state", () => {
 			alive();
 			return view();
@@ -719,6 +864,7 @@ export function activate(
 		ctx.handle("save-settings", (input) => {
 			alive();
 			save({ ...state, settings: applySettingsPatch(state.settings, input) });
+			syncTeacherTool();
 			return view();
 		}),
 		ctx.handle("export-memes", () => {
@@ -730,25 +876,22 @@ export function activate(
 			save({ ...state, usage: {} });
 			return view();
 		}),
-		ctx.handle("generate", async (input) => {
-			alive();
-			// One paid request chain at a time, however many windows ask.
-			if (generating) throw new Error("A meme is already being made.");
-			generating = true;
-			const requestId = object(input).requestId;
-			stageFor = typeof requestId === "string" ? requestId : null;
-			try {
-				const meme = await generate(input);
-				// A reopened (reused) meme carries the learner's earlier rating.
-				const rating = meme.generatedId
-					? (readRating(ctx.dataDirectory, meme.generatedId) ?? null)
-					: null;
-				return { ...meme, rating };
-			} finally {
-				generating = false;
-				stageFor = null;
-			}
-		}),
+		ctx.handle("generate", (input) =>
+			guarded(async () => {
+				const requestId = object(input).requestId;
+				stageFor = typeof requestId === "string" ? requestId : null;
+				try {
+					const meme = await generate(input, "user");
+					// A reopened (reused) meme carries the learner's earlier rating.
+					const rating = meme.generatedId
+						? (readRating(ctx.dataDirectory, meme.generatedId) ?? null)
+						: null;
+					return { ...meme, rating };
+				} finally {
+					stageFor = null;
+				}
+			}),
+		),
 		ctx.handle("rate", (input) => {
 			alive();
 			const { id, rating } = object(input);

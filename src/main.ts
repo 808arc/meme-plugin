@@ -5,6 +5,7 @@ import type {
 	PluginSessionViewContext,
 	PluginSettingsRow,
 	PluginSurfaceProps,
+	PluginToolRenderProps,
 	PluginWidgetHandle,
 } from "learnharness-plugin-api";
 import {
@@ -13,7 +14,13 @@ import {
 	conceptFromView,
 	optionLabels,
 } from "./concept.ts";
-import { MEME_MODES, type MemeMode, STAGE_TOPIC, STAGES } from "./config.ts";
+import {
+	MEME_MODES,
+	type MemeMode,
+	STAGE_TOPIC,
+	STAGES,
+	TEACHER_TOOL,
+} from "./config.ts";
 import { element, memePng, mountMeme } from "./render.ts";
 import {
 	customFolderProblem,
@@ -450,6 +457,20 @@ function settingsRows(
 			onChange: (useMemegen) => save({ useMemegen }),
 		},
 		{
+			type: "dropdown",
+			key: "teacherMemes",
+			label: "Teacher memes (experimental)",
+			description: `In teaching sessions the teacher may put a meme in the chat, at most one per ${TEACHER_TOOL.turnsPerMeme} teacher turns and ${TEACHER_TOOL.automaticMemesPerDay} a day. It is told to wait until you have tried the question, but this is not yet enforced by LearnHarness.`,
+			value: settings.teacherMemes,
+			options: [
+				{ value: "off", label: "Off" },
+				{ value: "teacher", label: "Teacher decides" },
+				{ value: "wrong", label: "After wrong answers" },
+			],
+			onChange: (value) =>
+				save({ teacherMemes: value as Settings["teacherMemes"] }),
+		},
+		{
 			type: "text",
 			key: "imageBaseUrl",
 			label: "Image server",
@@ -629,8 +650,62 @@ function mountSettings(
 	return () => root.remove();
 }
 
+/** Teacher tool result: the meme the teacher put in the chat. Renders only what the backend returned. */
+function mountTeacherMeme(
+	ctx: PluginFrontendContext,
+	container: HTMLElement,
+	tool: PluginToolRenderProps,
+): () => void {
+	const root = element("div", "meme-plugin-tool");
+	container.append(root);
+	const note = (text: string, failed = false) =>
+		root.replaceChildren(
+			element(
+				"p",
+				failed ? "meme-plugin-status meme-plugin-error" : "meme-plugin-status",
+				text,
+			),
+		);
+	if (tool.state === "output-error") {
+		note(tool.errorText || "The meme could not be made.", true);
+		return () => root.remove();
+	}
+	const result = tool.output as GeneratedMeme | undefined;
+	if (
+		tool.state !== "output-available" ||
+		!result ||
+		!Array.isArray(result.lines)
+	) {
+		note("Making a meme…");
+		return () => root.remove();
+	}
+	let unmount: (() => void) | null = null;
+	const show = (image: MemeImage | null) => {
+		if (tool.signal.aborted) return;
+		unmount?.();
+		root.replaceChildren();
+		unmount = mountMeme(root, result, image);
+		root.append(element("p", "meme-plugin-fact", result.fact));
+	};
+	if (result.meme.hasImage) {
+		// A missing image is not a failure: the caption still shows as text.
+		ctx
+			.call<MemeImage | null>("get-image", { id: result.meme.id })
+			.then(show, () => show(null));
+	} else show(null);
+	return () => {
+		unmount?.();
+		root.remove();
+	};
+}
+
 export function activate(ctx: PluginFrontendContext): void {
 	let open: PluginWidgetHandle<PluginSurfaceProps> | null = null;
+
+	ctx.registerToolRenderer({
+		toolName: "meme_teach",
+		mount: (container, tool) => mountTeacherMeme(ctx, container, tool),
+	});
 
 	ctx.registerAction({
 		id: "meme-this",

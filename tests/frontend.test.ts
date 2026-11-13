@@ -47,6 +47,7 @@ const state: PluginState = {
 		webSearch: true,
 		searchAgent: null,
 		mode: "answer",
+		teacherMemes: "off",
 	},
 	pool: { memegen: 209, custom: 1, coolingDown: 3 },
 	customFolder: "/plugins/meme-plugin/data",
@@ -144,6 +145,9 @@ function fixture(
 		},
 		registerSettings(mount: typeof settings) {
 			settings = mount;
+			return () => {};
+		},
+		registerToolRenderer() {
 			return () => {};
 		},
 		async call(operation: string, input?: unknown) {
@@ -504,6 +508,7 @@ test("settings publish only what the backend accepted", async (t) => {
 			["rejectCooldownDays", "number", 1],
 			["webSearch", "toggle", true],
 			["useMemegen", "toggle", true],
+			["teacherMemes", "dropdown", "off"],
 			["imageBaseUrl", "text", "https://api.memegen.link"],
 			["ownMemesShare", "slider", 100],
 			["customFolder", "text", ""],

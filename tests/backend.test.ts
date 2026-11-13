@@ -1742,3 +1742,48 @@ test("fix(D): web search is skipped in Hint and Think modes", async (t) => {
 	assert.equal(answered.meme.origin, "web", "Answer mode still searches");
 	assert.equal(w.searches.length, 1);
 });
+
+test("fix(E): the teacher tool always makes Answer memes, whatever the mode", async (t) => {
+	const hintJson = JSON.stringify({
+		values: { achievement: "launched a GPU platform", name: "the boss" },
+		emphasis: null,
+		answer: "Jensen Huang",
+		fact: "Think of the company's founder.",
+	});
+	const f = fixture(t, {
+		memes: [custom[0]],
+		reply: (request) => {
+			const system = request.context.systemPrompt!;
+			if (system.startsWith("You turn the caption")) return {};
+			if (system.startsWith("You check one study fact"))
+				return { text: '{"agrees": true}' };
+			if (system.includes("gives a hint")) return { text: hintJson };
+			return {};
+		},
+	});
+	const { call, registered } = f.start();
+	await call("save-settings", {
+		...offline,
+		mode: "hint",
+		teacherMemes: "teacher",
+	});
+	const [tool] = registered[0]!.create({
+		chatId: "c",
+		agent: "teacher",
+	}) as Tool[];
+	const result = await tool!.execute("call-1", { prompt: "Who backed CUDA?" });
+	assert.equal(result.details.mode, undefined, "an Answer meme");
+	assert.equal(result.details.fact, "Jensen Huang backed CUDA.");
+	assert.ok(
+		f.requests.some((request) =>
+			request.context.systemPrompt!.startsWith("You check one study fact"),
+		),
+		"Answer mode runs the fact check",
+	);
+	// The learner's own request in Hint mode is still a hint.
+	const hint = await call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+		options: ["Jensen Huang", "Lisa Su"],
+	});
+	assert.equal(hint.mode, "hint");
+});

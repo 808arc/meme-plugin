@@ -17,6 +17,7 @@ import {
 	OWN_MEMES,
 	PICK_STEP,
 	STAGE_TOPIC,
+	type MemeMode,
 	TEACHER_TOOL,
 } from "./config.ts";
 import {
@@ -569,9 +570,12 @@ export function activate(
 		return null;
 	}
 
+	/** One meme for one question. `mode` is passed in, never read from settings here:
+	 * automatic callers (teacher tool, buttonless) always pass "answer". */
 	async function generate(
 		input: unknown,
 		purpose: PluginCallPurpose,
+		mode: MemeMode,
 	): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
@@ -603,7 +607,6 @@ export function activate(
 				: undefined);
 		// #17: the mode is the backend's stored setting, read once per meme. A question
 		// read before reveal is refused unless the mode allows it, before any model call.
-		const mode = state.settings.mode;
 		const early = value.early === true;
 		if (early && !(MEME_MODES.preReveal as readonly string[]).includes(mode))
 			throw new Error("Reveal the question first. A meme would show it early.");
@@ -836,7 +839,7 @@ export function activate(
 			if (!budgetLeft())
 				throw new Error("Today's automatic meme budget is used up.");
 			// Not asked for by the learner: automatic work, classified as background.
-			const meme = await guarded(() => generate(input, "background"));
+			const meme = await guarded(() => generate(input, "background", "answer"));
 			chat.memeTurn = chat.turn;
 			spendAutomatic();
 			return {
@@ -908,7 +911,7 @@ export function activate(
 				const requestId = object(input).requestId;
 				stageFor = typeof requestId === "string" ? requestId : null;
 				try {
-					const meme = await generate(input, "user");
+					const meme = await generate(input, "user", state.settings.mode);
 					// A reopened (reused) meme carries the learner's earlier rating.
 					const rating = meme.generatedId
 						? (readRating(ctx.dataDirectory, meme.generatedId) ?? null)
@@ -966,6 +969,7 @@ export function activate(
 						...(value.context !== undefined ? { context: value.context } : {}),
 					},
 					"background",
+					"answer",
 				),
 			);
 			spendAutomatic();

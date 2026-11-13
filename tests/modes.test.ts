@@ -8,7 +8,9 @@ import {
 	conceptFromView,
 	optionLabels,
 } from "../src/concept.ts";
+import { SHUFFLE_SEQUENCE } from "../src/config.ts";
 import {
+	concreteMode,
 	givesAnswerAway,
 	hintFillRequest,
 	parseModeFilling,
@@ -253,4 +255,35 @@ test("Hint and Think prompts forbid the answer and say when the question is unse
 	}
 	assert.match(hint.user, /have not seen it yet/);
 	assert.match(think.user, /^The learner is being asked/);
+});
+
+// #32 shuffle mode
+
+test("shuffle resolves to answer, hint, think, then repeats; other modes pass through", () => {
+	const order = [0, 1, 2, 3, 4, 5, 6].map((position) =>
+		concreteMode("shuffle", position),
+	);
+	assert.deepEqual(order, [
+		"answer",
+		"hint",
+		"think",
+		"answer",
+		"hint",
+		"think",
+		"answer",
+	]);
+	assert.deepEqual(SHUFFLE_SEQUENCE, ["answer", "hint", "think"]);
+	assert.equal(concreteMode("hint", 7), "hint");
+	assert.equal(concreteMode("think", 0), "think");
+	assert.equal(concreteMode("answer", 2), "answer");
+	assert.equal(
+		concreteMode("shuffle", -1),
+		"answer",
+		"a bad position starts over",
+	);
+	assert.equal(
+		concreteMode("shuffle", 1.5),
+		"answer",
+		"a bad position starts over",
+	);
 });

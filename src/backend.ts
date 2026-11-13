@@ -17,6 +17,7 @@ import {
 	OWN_MEMES,
 	PICK_STEP,
 	STAGE_TOPIC,
+	type ConcreteMode,
 	type MemeMode,
 	TEACHER_TOOL,
 } from "./config.ts";
@@ -34,7 +35,12 @@ import {
 	loadCustomMemes,
 	memegenMemes,
 } from "./library.ts";
-import { modeFillRequest, parseModeFilling, readOptions } from "./modes.ts";
+import {
+	concreteMode,
+	modeFillRequest,
+	parseModeFilling,
+	readOptions,
+} from "./modes.ts";
 import {
 	extractJson,
 	fillRequest,
@@ -123,6 +129,15 @@ interface Stored {
 
 /** The model answered, but not with something the plugin can accept. */
 class RejectedReply extends Error {}
+
+/** #32: the chat a request belongs to, from its `sessionId`; "" when absent. */
+function chatKey(input: unknown): string {
+	const id =
+		input && typeof input === "object"
+			? (input as { sessionId?: unknown }).sessionId
+			: undefined;
+	return typeof id === "string" ? id.slice(0, 200) : "";
+}
 
 function object(value: unknown): Record<string, unknown> {
 	if (value === null || typeof value !== "object" || Array.isArray(value))
@@ -232,6 +247,9 @@ export function activate(
 	const unusable = new Set<string>();
 	/** The web meme shown last; its image is served by `get-image`. */
 	const webFound = new Map<string, Meme>();
+	/** #32: memes made in Shuffle, per chat (session id). In memory: a plugin reload
+	 * or a save of the mode setting starts the sequence again at Answer. */
+	const shufflePosition = new Map<string, number>();
 
 	const alive = () => {
 		if (disposed || ctx.signal.aborted)
@@ -284,11 +302,15 @@ export function activate(
 			problems: custom.problems,
 		};
 	};
-	const view = (): PluginState => {
+	const view = (chat: string): PluginState => {
 		const current = pool(),
 			now = Date.now();
 		return {
 			settings: { ...state.settings },
+			nextMode: concreteMode(
+				state.settings.mode,
+				shufflePosition.get(chat) ?? 0,
+			),
 			pool: {
 				memegen: current.memegen,
 				custom: current.custom,
@@ -577,6 +599,10 @@ export function activate(
 		return null;
 	}
 
+	/** #17/#32: a meme records its mode unless it is a plain Answer meme. */
+	const modeField = (mode: ConcreteMode, labelled: boolean) =>
+		mode === "answer" && !labelled ? {} : { mode };
+
 	/** One meme for one question. Pipeline, in order; each step stops at its first hit:
 	 *  1. reuse an earlier meme for the same question and mode (#9);
 	 *  2. web search for an existing meme (#11): Answer mode only, and only when
@@ -587,11 +613,13 @@ export function activate(
 	 *  5. check: Answer runs the fact check (#7); Hint and Think run the no-answer
 	 *     check (#17).
 	 * `mode` is passed in, never read from settings here: automatic callers (teacher
-	 * tool, buttonless) always pass "answer". */
+	 * tool, buttonless) always pass "answer". `labelled` (#32): the mode came from
+	 * Shuffle, so an Answer meme carries its mode too, for the label. */
 	async function generate(
 		input: unknown,
 		purpose: PluginCallPurpose,
-		mode: MemeMode,
+		mode: ConcreteMode,
+		labelled = false,
 	): Promise<GeneratedMeme> {
 		const value = object(input);
 		const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
@@ -658,8 +686,10 @@ export function activate(
 		if (earlier) {
 			markUsed(earlier.meme.meme.id);
 			writeGenerated(ctx.dataDirectory, recordReuse(store, key));
+			const { mode: _stored, ...base } = earlier.meme;
 			return {
-				...earlier.meme,
+				...base,
+				...modeField(mode, labelled),
 				concept,
 				generatedId: earlier.id,
 				reused: true,
@@ -761,7 +791,7 @@ export function activate(
 				values: filling.values,
 				emphasis,
 				fact: filling.fact,
-				...(mode === "answer" ? {} : { mode }),
+				...modeField(mode, labelled),
 			};
 			const entry = newEntry(stored, Date.now());
 			// Re-read: a rating may have been written while the model was answering.
@@ -907,31 +937,44 @@ export function activate(
 		() => {
 			for (const release of teacherRelease.splice(0)) release();
 		},
-		ctx.handle("get-state", () => {
+		ctx.handle("get-state", (input) => {
 			alive();
-			return view();
+			return view(chatKey(input));
 		}),
 		ctx.handle("save-settings", (input) => {
 			alive();
 			save({ ...state, settings: applySettingsPatch(state.settings, input) });
+			// #32: a saved mode setting starts the Shuffle sequence again.
+			if (input && typeof input === "object" && "mode" in input)
+				shufflePosition.clear();
 			syncTeacherTool();
-			return view();
+			return view(chatKey(input));
 		}),
 		ctx.handle("export-memes", () => {
 			alive();
 			return exportMemes();
 		}),
-		ctx.handle("reset-usage", () => {
+		ctx.handle("reset-usage", (input) => {
 			alive();
 			save({ ...state, usage: {} });
-			return view();
+			return view(chatKey(input));
 		}),
 		ctx.handle("generate", (input) =>
 			guarded(async () => {
 				const requestId = object(input).requestId;
 				stageFor = typeof requestId === "string" ? requestId : null;
+				const chat = chatKey(input);
+				const setting = state.settings.mode;
+				const position = shufflePosition.get(chat) ?? 0;
 				try {
-					const meme = await generate(input, "user", state.settings.mode);
+					const meme = await generate(
+						input,
+						"user",
+						concreteMode(setting, position),
+						setting === "shuffle",
+					);
+					// #32: a meme made in Shuffle moves the chat to the next mode.
+					if (setting === "shuffle") shufflePosition.set(chat, position + 1);
 					// A reopened (reused) meme carries the learner's earlier rating.
 					const rating = meme.generatedId
 						? (readRating(ctx.dataDirectory, meme.generatedId) ?? null)
@@ -961,6 +1004,7 @@ export function activate(
 				throw new Error("An automatic meme needs a question key.");
 			const frequency = state.settings.automaticMemes;
 			// #17: an automatic meme states the answer, so it runs in Answer mode only.
+			// #32: Shuffle is not Answer, so it gets no automatic memes either.
 			if (frequency === "off" || state.settings.mode !== "answer")
 				return { status: "off" };
 			if (state.buttonless.seen.includes(key)) return { status: "seen" };

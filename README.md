@@ -84,6 +84,7 @@ replaces only the installed `dist/`.
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | Model | cheap model slot | Writes the captions. |
+| Meme mode | Answer | Answer: states the fact. Hint, Think: point at it, never state it; also work before reveal. Shuffle: Answer, Hint, Think in turn, one per question; each label shows its mode. |
 | Add emphasis | on | Step 5. |
 | Cooldown (days) | 14 | How long a used meme stays out of rotation. 0 turns it off. |
 | Cooldown growth | 2 | Each further use of the same meme multiplies its cooldown: 14, 28, 56 … days, at most a year. |

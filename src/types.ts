@@ -1,5 +1,5 @@
 /** Shapes shared by the backend, the frontend and the tests. JSON-compatible only. */
-import type { MemeMode } from "./config.ts";
+import type { ConcreteMode, MemeMode } from "./config.ts";
 
 /** Where one caption line is drawn, as fractions of the image (memegen's model). */
 export interface Box {
@@ -102,8 +102,9 @@ export interface GeneratedMeme {
 	reused?: true;
 	/** The learner's stored rating of this generated meme, sent with generate results. */
 	rating?: "up" | "down" | null;
-	/** #17: present only for Hint and Think, so Answer results stay as before. */
-	mode?: Exclude<MemeMode, "answer">;
+	/** #17: present only for Hint and Think, so Answer results stay as before. #32: also
+	 * present for an Answer meme made in Shuffle, so its label shows the mode used. */
+	mode?: ConcreteMode;
 }
 
 export interface Settings {
@@ -130,7 +131,7 @@ export interface Settings {
 	webSearch: boolean;
 	/** The search agent to ask (model and provider). Null: no agent, no search. */
 	searchAgent: { provider: string; id: string } | null;
-	/** #17: what the caption does. Answer states the fact (default). */
+	/** #17: what the caption does. Answer states the fact (default). #32: Shuffle cycles the concrete modes. */
 	mode: MemeMode;
 	/** Experimental: when the teacher agent may add a meme to the chat (tool `meme_teach`). */
 	teacherMemes: TeacherMemes;
@@ -165,6 +166,8 @@ export interface Usage {
 
 export interface PluginState {
 	settings: Settings;
+	/** #32: the mode the next meme in this chat uses; equals settings.mode unless Shuffle. */
+	nextMode: ConcreteMode;
 	pool: { memegen: number; custom: number; coolingDown: number };
 	/** #21: absolute folder custom memes are read from. */
 	customFolder: string;

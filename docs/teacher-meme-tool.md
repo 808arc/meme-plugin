@@ -1,42 +1,56 @@
 # Teacher meme tool (#10)
 
-Status: design. Part implemented, see "Built now". Open items need the owner.
+Status: **experimental**, off by default. The reveal rule is prompt-only (see below); that is the main risk.
 
 ## Goal
 
-The teacher agent can put one meme in the chat when it helps a concept stick.
+In teaching sessions the teacher agent can put a meme in the chat when it helps a concept stick.
 
 ## Mechanics
 
-- Host API: `ctx.registerTools({ agents: ["teacher"], create })` in backend; `ctx.registerInstructions({ agents: ["teacher"], text })`; `ctx.registerToolRenderer({ toolName: "meme_teach" })` in frontend.
+- Host API: `ctx.registerTools({ agents: ["teacher"], create })` and `ctx.registerInstructions({ agents: ["teacher"], text })` in backend; `ctx.registerToolRenderer({ toolName: "meme_teach" })` in frontend.
+- Teaching sessions only (`teacher` agent). Not prober, not practice.
 - Tool name: `meme_teach`. Input: `{ prompt, context? }` (same concept shape as Meme this). No answer field.
-- Output to model: caption lines and fact (so the teacher can refer to it). Output to renderer: `GeneratedMeme` in `details`.
-- Same pipeline as Meme this (`generate`), same pool, cooldown and fact step. Shares the one-at-a-time guard.
-- Not registered unless the setting is on. Toggle takes effect for future turns (host semantics).
+- Output to model: caption lines and fact. Output to renderer: `GeneratedMeme` in `details`.
+- Same pipeline as Meme this (`generate`): same pool, cooldown, fact. Shares the one-at-a-time guard.
+- Tool and instructions are registered only while a mode is on. Changes apply to future turns (host semantics).
+
+## Setting: Teacher memes (experimental)
+
+| Value | Behaviour |
+| --- | --- |
+| Off (default) | Nothing registered. No change to sessions. |
+| Teacher decides | Teacher may call the tool unprompted, within the cap. |
+| After wrong answers | Teacher told to call it only right after a wrong answer, once revealed. Prompt-only: the plugin sees no grading signal. |
+
+## Limits (`src/config.ts`, section `// #10 teacher tool`)
+
+- `turnsPerMeme: 5`: at most one teacher meme per 5 teacher turns per chat. A turn = one call of the `registerTools` `create` factory (the host builds a fresh loadout per turn). The tool context has no turn counter or time signal; this is the only turn signal. Over the cap the tool is not offered that turn; `execute` also refuses.
+- `automaticMemesPerDay: 10`: one shared daily budget for all automatic memes (this tool now, buttonless mode #18 later). Local calendar day, persisted in `state.json` as `automatic`. Counted on success.
+- Turn counts are in memory and reset on restart. The daily budget does not.
+
+## Inference purpose
+
+- SDK: `PluginCallPurpose = "user" | "background"`. Docs: purpose must reflect who started the work; automatic work must not be classified as user.
+- Tool path uses `"background"` (the teacher, not the learner, chose to make it). Meme this stays `"user"`.
 
 ## Reveal rule
 
 - A meme never shows an answer before the learner has tried.
-- Enforced by: tool instructions (call only after the learner answered or the question is revealed; never while a question is pending); tool description; no answer field in input.
-- Limit: `PluginToolContext` gives only `chatId` and `agent`. The backend cannot read reveal state. Real enforcement needs the host to pass reveal state, or the host to hold tool calls while a question is pending.
+- Today enforced only by: teacher instructions, tool description, no answer field in the input.
+- Gap: `PluginToolContext` has only `chatId` and `agent`. The backend cannot see whether a question is pending or revealed.
 
-## Setting
+### Host request (exact)
 
-- `teacherTool: boolean`, default **off**. No frequency levels yet (see open questions). Off changes nothing.
+Either of these, in order of preference:
 
-## Open decisions (owner)
+1. **Reveal state in tool context.** Add to `PluginToolContext` a read-only field, for example `readonly input: { pending: boolean; revealed: boolean }`, matching `PluginSessionViewContext.input` for the chat when the tool executes. The plugin then refuses `meme_teach` when `pending && !revealed`.
+2. **Hold tool calls while a question is pending.** A tool option, for example `holdWhileQuestionPending: true` on the tool definition, so the host defers or rejects execution while the learner has an unanswered, unrevealed question in that chat.
 
-1. Frequency: off / when the teacher judges fit / after wrong answers only / every Nth concept. Default off stays.
-2. Reveal enforcement: host support for reveal state in tool context (preferred) vs prompt-only.
-3. Scope: teacher only, or practice agent too (practice has its own reveal flow).
-4. Model cost: tool calls make 1 to 2 requests each. Cap per session? Count against the auto-meme budget from #18?
-5. Fact check (#7) must run before the tool returns, not after.
-6. Purpose of the inference call: tool runs inside a user turn, so `user` is used; confirm.
-7. Teacher-initiated memes when the learner has not asked: allowed by default or not?
+Until one exists, the setting stays labelled experimental and off by default.
 
-## Built now
+## Still open
 
-- Setting `teacherTool` (default off), settings row.
-- Backend: tool and instructions registered only while the setting is on.
-- Frontend: renderer for `meme_teach` (caption, fact, optional image).
-- Not built: frequency, reveal-state plumbing, practice agent, caps.
+- Fact check (#7) should run before the tool returns.
+- A grading signal (host event with answer correctness) would make "After wrong answers" enforceable.
+- Whether practice sessions get the tool later.

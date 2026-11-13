@@ -41,11 +41,17 @@ interface CachedTemplate extends Template {
 	captionHash: string;
 	promptVersion: number;
 }
+/** Minimal learner rating of one meme; the full data model belongs to issue #19. */
+interface Rating {
+	rating: "up" | "down";
+	at: number;
+}
 interface Stored {
 	version: number;
 	settings: Settings;
 	usage: Record<string, Usage>;
 	templates: Record<string, CachedTemplate>;
+	ratings: Record<string, Rating>;
 }
 
 /** The model answered, but not with something the plugin can accept. */
@@ -68,6 +74,7 @@ function readState(file: string): Stored {
 				settings: readSettings(undefined),
 				usage: {},
 				templates: {},
+				ratings: {},
 			};
 		throw new Error(
 			`Meme plugin could not read ${STATE_FILE}: ${(error as Error).message}`,
@@ -103,11 +110,24 @@ function readState(file: string): Stored {
 			? stored.templates
 			: {}
 	) as Record<string, CachedTemplate>;
+	const ratings: Record<string, Rating> = {};
+	for (const [id, entry] of Object.entries(
+		stored.ratings && typeof stored.ratings === "object" ? stored.ratings : {},
+	)) {
+		const item = entry as Partial<Rating> | null;
+		if (
+			item &&
+			(item.rating === "up" || item.rating === "down") &&
+			Number.isFinite(item.at)
+		)
+			ratings[id] = { rating: item.rating, at: item.at! };
+	}
 	return {
 		version: STATE_VERSION,
 		settings: readSettings(stored.settings),
 		usage,
 		templates,
+		ratings,
 	};
 }
 
@@ -402,6 +422,22 @@ export function activate(ctx: PluginBackendContext): () => void {
 			} finally {
 				generating = false;
 			}
+		}),
+		ctx.handle("rate", (input) => {
+			alive();
+			const { id, rating } = object(input);
+			if (
+				typeof id !== "string" ||
+				!pool().memes.some((meme) => meme.id === id)
+			)
+				throw new Error("Unknown meme.");
+			if (rating !== "up" && rating !== "down" && rating !== null)
+				throw new Error("Rating must be up, down or null.");
+			const ratings = { ...state.ratings };
+			if (rating === null) delete ratings[id];
+			else ratings[id] = { rating, at: Date.now() };
+			save({ ...state, ratings });
+			return null;
 		}),
 		ctx.handle("get-image", async (input): Promise<MemeImage | null> => {
 			alive();

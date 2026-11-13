@@ -7,7 +7,7 @@ import type {
 	PluginWidgetHandle,
 } from "learnharness-plugin-api";
 import { type ConceptResult, conceptFromView } from "./concept.ts";
-import { element, mountMeme } from "./render.ts";
+import { element, memePng, mountMeme } from "./render.ts";
 import { imageBaseUrlProblem, LIMITS } from "./settings.ts";
 import type {
 	Concept,
@@ -19,6 +19,9 @@ import type {
 
 const ICON =
 	'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01"/><path d="M15 9h.01"/></svg>';
+
+/** Delay before the second progress label; the backend call is a single step. */
+const WRITING_STEP_DELAY_MS = 1500;
 
 const message = (error: unknown) =>
 	error instanceof Error && error.message
@@ -37,18 +40,29 @@ function mountSurface(
 	heading.tabIndex = -1;
 	heading.setAttribute("data-plugin-initial-focus", "");
 	const conceptLine = element("p", "meme-plugin-concept");
+	// Collapsible: the learner can fold the picture away and keep the fact.
+	const collapse = element("details", "meme-plugin-collapse");
+	collapse.open = true;
+	const collapseTitle = element("summary", "", "Meme image");
 	const body = element("div", "meme-plugin-body");
+	collapse.append(collapseTitle, body);
 	const fact = element("p", "meme-plugin-fact");
 	const credit = element("p", "meme-plugin-credit");
 	const actions = element("div", "meme-plugin-actions");
 	const anotherSlot = element("span", ""),
-		copySlot = element("span", "");
-	actions.append(anotherSlot, copySlot);
-	root.append(heading, conceptLine, body, fact, credit, actions);
+		copySlot = element("span", ""),
+		copyImageSlot = element("span", ""),
+		upSlot = element("span", ""),
+		downSlot = element("span", "");
+	actions.append(anotherSlot, copySlot, copyImageSlot, upSlot, downSlot);
+	const notice = element("p", "meme-plugin-notice");
+	root.append(heading, conceptLine, collapse, fact, credit, actions, notice);
 	container.append(root);
 
 	let concept: Concept | null = found.status === "found" ? found.concept : null;
 	let result: GeneratedMeme | null = null;
+	let image: MemeImage | null = null;
+	let rating: "up" | "down" | null = null;
 	let sequence = 0;
 	let unmountMeme: (() => void) | null = null;
 
@@ -69,10 +83,16 @@ function mountSurface(
 			),
 		);
 	};
-	const show = (next: GeneratedMeme, image: MemeImage | null) => {
+	const paintRating = () => {
+		up.update({ label: rating === "up" ? "👍 Liked" : "👍" });
+		down.update({ label: rating === "down" ? "👎 Not for me" : "👎" });
+	};
+	const show = (next: GeneratedMeme, picture: MemeImage | null) => {
 		clear();
 		result = next;
-		unmountMeme = mountMeme(body, next, image);
+		image = picture;
+		rating = null;
+		unmountMeme = mountMeme(body, next, picture);
 		fact.textContent = next.fact;
 		credit.append(`Meme: ${next.meme.name}`);
 		if (next.meme.source && /^https?:\/\//.test(next.meme.source)) {
@@ -82,6 +102,8 @@ function mountSurface(
 			link.rel = "noopener noreferrer";
 			credit.append(" · ", link);
 		}
+		notice.textContent = "";
+		paintRating();
 	};
 
 	const run = async () => {
@@ -91,7 +113,16 @@ function mountSurface(
 		conceptLine.textContent = concept.prompt;
 		another.update({ disabled: true });
 		copy.update({ disabled: true });
-		status("Picking a meme and writing the caption…");
+		copyImage.update({ disabled: true });
+		up.update({ disabled: true });
+		down.update({ disabled: true });
+		notice.textContent = "";
+		status("Finding a fitting meme…");
+		// The backend makes one call, so the second step is a timed label, not a
+		// real stage report. It only shows if the first step is still running.
+		const writing = setTimeout(() => {
+			if (!stale()) status("Writing the caption…");
+		}, WRITING_STEP_DELAY_MS);
 		try {
 			// Asking again steers away from the meme that is on screen.
 			const next = await ctx.call<GeneratedMeme>("generate", {
@@ -99,25 +130,46 @@ function mountSurface(
 				...(result ? { excludeMemeId: result.meme.id } : {}),
 			});
 			if (stale()) return;
-			let image: MemeImage | null = null;
+			let picture: MemeImage | null = null;
 			if (next.meme.hasImage) {
 				// A missing image is not a failure: the caption still shows as text.
 				try {
-					image = await ctx.call<MemeImage | null>("get-image", {
+					picture = await ctx.call<MemeImage | null>("get-image", {
 						id: next.meme.id,
 					});
 				} catch {
-					image = null;
+					picture = null;
 				}
 				if (stale()) return;
 			}
-			show(next, image);
+			show(next, picture);
 			another.update({ disabled: false, label: "Another meme" });
 			copy.update({ disabled: false });
+			copyImage.update({ disabled: !picture });
+			up.update({ disabled: false });
+			down.update({ disabled: false });
 		} catch (error) {
 			if (stale()) return;
 			status(message(error), true);
 			another.update({ disabled: false, label: "Try again" });
+		} finally {
+			clearTimeout(writing);
+		}
+	};
+
+	const rate = async (value: "up" | "down") => {
+		if (!result) return;
+		const id = result.meme.id;
+		const previous = rating;
+		rating = rating === value ? null : value;
+		paintRating();
+		try {
+			await ctx.call("rate", { id, rating });
+		} catch (error) {
+			if (signal.aborted || result?.meme.id !== id) return;
+			rating = previous;
+			paintRating();
+			notice.textContent = `Rating not saved. ${message(error)}`;
 		}
 	};
 
@@ -138,6 +190,48 @@ function mountSurface(
 						result.lines.filter(Boolean).join("\n"),
 					);
 			},
+		},
+		{ signal },
+	);
+	const copyImage = ctx.ui.mountButton(
+		copyImageSlot,
+		{
+			label: "Copy image",
+			variant: "ghost",
+			disabled: true,
+			onClick: async () => {
+				if (!result || !image) return;
+				try {
+					const blob = await memePng(result, image);
+					await navigator.clipboard.write([
+						new ClipboardItem({ "image/png": blob }),
+					]);
+				} catch (error) {
+					notice.textContent = `Image not copied. ${message(error)}`;
+				}
+			},
+		},
+		{ signal },
+	);
+	const up = ctx.ui.mountButton(
+		upSlot,
+		{
+			label: "👍",
+			variant: "ghost",
+			size: "sm",
+			disabled: true,
+			onClick: () => rate("up"),
+		},
+		{ signal },
+	);
+	const down = ctx.ui.mountButton(
+		downSlot,
+		{
+			label: "👎",
+			variant: "ghost",
+			size: "sm",
+			disabled: true,
+			onClick: () => rate("down"),
 		},
 		{ signal },
 	);

@@ -253,7 +253,7 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 	assert.equal(surface.props.title, "Meme");
 	assert.match(
 		surface.container.querySelector(".meme-plugin-status")!.textContent!,
-		/Picking a meme/,
+		/Finding a fitting meme/,
 	);
 	assert.ok(surface.container.querySelector("[data-plugin-initial-focus]"));
 	await settle();

@@ -126,6 +126,30 @@ test("without a pending question the teacher's latest message is used", () => {
 	);
 });
 
+test("an answer key the host supplies becomes the correct and wrong labels", () => {
+	const options = [
+		{ label: "Jensen Huang", value: "a" },
+		{ label: "Lisa Su", value: "b" },
+	];
+	assert.deepEqual(
+		conceptFromView(
+			view({
+				type: "answer",
+				revealed: true,
+				question: { id: "q", question: "Who?", options, correctIndices: [0] },
+			}),
+		),
+		{
+			status: "found",
+			concept: {
+				prompt: "Who?",
+				context: "Answer options shown to the learner: Jensen Huang | Lisa Su",
+				answer: { correct: ["Jensen Huang"], others: ["Lisa Su"] },
+			},
+		},
+	);
+});
+
 test("long questions are clipped to the backend's limit", () => {
 	const result = conceptFromView(
 		view({

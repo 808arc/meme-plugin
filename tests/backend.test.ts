@@ -9,6 +9,7 @@ import type {
 	PluginInferenceRequest,
 } from "learnharness-plugin-api";
 import { activate } from "../src/backend.ts";
+import { MAX_FACT_ATTEMPTS } from "../src/factcheck.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
 import type { GeneratedMeme, MemeImage, PluginState } from "../src/types.ts";
 
@@ -146,7 +147,11 @@ function fixture(
 						JSON.stringify(
 							request.context.systemPrompt!.startsWith("You turn the caption")
 								? templates[memeOf(request)]
-								: fillings[memeOf(request)],
+								: request.context.systemPrompt!.startsWith(
+											"You check one study fact",
+										)
+									? { agrees: true }
+									: fillings[memeOf(request)],
 						);
 					return {
 						role: "assistant",
@@ -216,7 +221,11 @@ test("generate picks a meme, templates it once, fills it and starts its cooldown
 	);
 	assert.deepEqual(first.meme.boxes, defaultBoxes(1));
 
-	assert.equal(f.requests.length, 2, "one template request, one fill request");
+	assert.equal(
+		f.requests.length,
+		3,
+		"one template request, one fill request, one fact check",
+	);
 	for (const request of f.requests) {
 		assert.deepEqual(
 			request.model,
@@ -236,7 +245,7 @@ test("generate picks a meme, templates it once, fills it and starts its cooldown
 	assert.ok(usage.dueAt >= before + 14 * 86_400_000);
 	// The template is cached: the next meme from the same image costs one request.
 	await call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
-	assert.equal(f.requests.length, 3);
+	assert.equal(f.requests.length, 5);
 	assert.equal(f.stored().usage["custom:proud-speech"].uses, 2);
 	assert.equal((await call<PluginState>("get-state")).pool.coolingDown, 1);
 });
@@ -301,7 +310,7 @@ test("a rejected reply gets one correction, then the meme is abandoned for anoth
 	const first = corrected.start();
 	await first.call("save-settings", offline);
 	await first.call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
-	assert.equal(corrected.requests.length, 3);
+	assert.equal(corrected.requests.length, 4);
 	const retry = corrected.requests[1]!.context.messages;
 	assert.equal(retry.length, 3, "the correction continues the same exchange");
 	assert.match(
@@ -335,7 +344,9 @@ test("a rejected reply gets one correction, then the meme is abandoned for anoth
 	);
 	assert.equal(
 		stubborn.requests.filter(
-			(request) => stubborn.memeOf(request) === "Proud speech",
+			(request) =>
+				request.context.systemPrompt!.startsWith("You turn the caption") &&
+				stubborn.memeOf(request) === "Proud speech",
 		).length,
 		2,
 		"an untemplatable meme is not paid for again",
@@ -354,6 +365,71 @@ test("a rejected reply gets one correction, then the meme is abandoned for anoth
 	assert.equal(hopeless.requests.length, 2);
 });
 
+test("a fact that disagrees with the question is regenerated, then shown", async (t) => {
+	let checks = 0;
+	const f = fixture(t, {
+		memes: [custom[0]],
+		reply: (request) => {
+			if (!request.context.systemPrompt!.startsWith("You check one study fact"))
+				return {};
+			checks++;
+			return { text: JSON.stringify({ agrees: checks > 1 }) };
+		},
+	});
+	const { call } = f.start();
+	await call("save-settings", offline);
+	const meme = await call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	assert.equal(meme.fact, "Jensen Huang backed CUDA.");
+	const fills = f.requests.filter((request) =>
+		request.context.systemPrompt!.startsWith("You write the caption"),
+	);
+	assert.equal(fills.length, 2);
+	assert.match(
+		String(fills[1]!.context.messages[0]!.content),
+		/does not agree/,
+	);
+});
+
+test("when no caption agrees, no meme is shown and nothing is used up", async (t) => {
+	const f = fixture(t, {
+		memes: [custom[0]],
+		reply: (request) =>
+			request.context.systemPrompt!.startsWith("You check one study fact")
+				? { text: '{"agrees": false}' }
+				: {},
+	});
+	const { call } = f.start();
+	await call("save-settings", offline);
+	await assert.rejects(
+		call("generate", { prompt: "Who backed CUDA?" }),
+		/no meme was shown/,
+	);
+	const fills = f.requests.filter((request) =>
+		request.context.systemPrompt!.startsWith("You write the caption"),
+	);
+	assert.equal(fills.length, MAX_FACT_ATTEMPTS);
+	assert.deepEqual(f.stored().usage, {});
+});
+
+test("a question whose answer key is known is checked without a model call when the fact names it", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const { call } = f.start();
+	await call("save-settings", offline);
+	const meme = await call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+		answer: { correct: ["Jensen Huang"], others: ["Lisa Su"] },
+	});
+	assert.equal(meme.concept.answer?.correct[0], "Jensen Huang");
+	assert.equal(
+		f.requests.filter((request) =>
+			request.context.systemPrompt!.startsWith("You check one study fact"),
+		).length,
+		0,
+	);
+});
+
 test("model selection is explicit and failures are reported, not hidden", async (t) => {
 	const none = fixture(t, { cheapSlot: false });
 	const a = none.start();
@@ -366,7 +442,7 @@ test("model selection is explicit and failures are reported, not hidden", async 
 	await assert.rejects(a.call("generate", { prompt: "x" }), /not available/);
 	assert.equal(
 		none.requests.length,
-		2,
+		3,
 		"no request is sent to an unavailable model",
 	);
 

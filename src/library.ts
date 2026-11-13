@@ -3,7 +3,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import catalogue from "./data/memegen-templates.json" with { type: "json" };
-import { hiddenByDefault, type TemplateTags } from "./catalogue-tags.ts";
+import {
+	hiddenByDefault,
+	isDated,
+	type TemplateTags,
+} from "./catalogue-tags.ts";
 import type { Box, Meme } from "./types.ts";
 
 export const CUSTOM_FILE = "custom-memes.json";
@@ -59,6 +63,9 @@ export function memegenMemes(
 			image: imageBaseUrl ? `${imageBaseUrl}/images/${template.id}.jpg` : "",
 			caption: template.caption,
 			boxes: template.boxes as Box[],
+			...(isDated(template.tags as TemplateTags | undefined)
+				? { dated: true as const }
+				: {}),
 		}));
 }
 

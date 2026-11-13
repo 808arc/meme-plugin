@@ -143,3 +143,28 @@ test("a rejection is one more use, kept out at least the minimum", () => {
 		now,
 	);
 });
+
+test("fix(G): dated memes rank last and fill the shortlist only when needed", () => {
+	const dated = new Set(["d1", "d2"]);
+	const isDated = (id: string) => dated.has(id);
+	const ids = ["a", "d1", "b", "d2", "c"];
+	const three = shortlist(ids, {}, 0, 3, () => 0.5, isDated);
+	assert.deepEqual(
+		[...three].sort(),
+		["a", "b", "c"],
+		"no dated meme while others fit",
+	);
+	const four = shortlist(ids, {}, 0, 4, () => 0.5, isDated);
+	assert.equal(
+		four.filter((id) => dated.has(id)).length,
+		1,
+		"one dated fills the gap",
+	);
+	assert.deepEqual(four.slice(0, 3).sort(), ["a", "b", "c"]);
+	const all = shortlist(ids, {}, 0, 20, () => 0.5, isDated);
+	assert.deepEqual(
+		all.slice(3).sort(),
+		["d1", "d2"],
+		"dated come after the rest",
+	);
+});

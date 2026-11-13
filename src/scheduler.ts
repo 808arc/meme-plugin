@@ -59,6 +59,7 @@ export function shortlist(
 	now: number,
 	limit: number,
 	random: () => number = Math.random,
+	dated: (id: string) => boolean = () => false,
 ): string[] {
 	if (!ids.length) return [];
 	let pool = ids.filter((id) => !coolingDown(usage, id, now));
@@ -67,11 +68,15 @@ export function shortlist(
 		pool = ids.filter((id) => usage[id]!.dueAt === soonest);
 	}
 	const chosen = [...pool];
-	for (let i = 0; i < chosen.length - 1 && i < limit; i++) {
+	for (let i = 0; i < chosen.length - 1; i++) {
 		const j = i + Math.floor(random() * (chosen.length - i));
 		[chosen[i], chosen[j]] = [chosen[j]!, chosen[i]!];
 	}
-	return chosen.slice(0, limit);
+	// Dated memes (#6) go after the rest: they fill the shortlist only when needed.
+	return [
+		...chosen.filter((id) => !dated(id)),
+		...chosen.filter((id) => dated(id)),
+	].slice(0, limit);
 }
 
 /** A uniformly random meme that is not cooling down. When the whole pool is cooling

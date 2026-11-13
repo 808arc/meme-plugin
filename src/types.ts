@@ -29,6 +29,8 @@ export interface Meme {
 	/** The meme's original text, one entry per box. */
 	caption: string[];
 	boxes: Box[];
+	/** Recognition has faded (catalogue tag, #6). Ranks last in the pick shortlist. */
+	dated?: true;
 }
 
 export interface Slot {

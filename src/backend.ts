@@ -387,11 +387,16 @@ export function activate(
 		ids: readonly string[],
 		memes: readonly Meme[],
 	): Promise<string | undefined> {
+		const datedIds = new Set(
+			memes.filter((meme) => meme.dated).map((meme) => meme.id),
+		);
 		const candidates = shortlist(
 			ids,
 			state.usage,
 			Date.now(),
 			PICK_STEP.candidates,
+			Math.random,
+			(id) => datedIds.has(id),
 		);
 		if (candidates.length < 2) return candidates[0];
 		const listed = candidates.map((id) => memes.find((m) => m.id === id)!);

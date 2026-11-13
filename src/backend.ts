@@ -8,6 +8,7 @@ import type {
 	PluginModelSpec,
 } from "learnharness-plugin-api";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
+import { OWN_MEMES } from "./config.ts";
 import { loadImage } from "./images.ts";
 import { loadCustomMemes, memegenMemes } from "./library.ts";
 import {
@@ -17,7 +18,7 @@ import {
 	PROMPT_VERSION,
 	templateRequest,
 } from "./prompts.ts";
-import { coolingDown, pickMeme, recordUse } from "./scheduler.ts";
+import { coolingDown, pickPreferred, recordUse } from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
@@ -294,11 +295,30 @@ export function activate(ctx: PluginBackendContext): () => void {
 				? { context: value.context.trim() }
 				: {}),
 		};
+		// "Not this one" (#21): the meme on screen counts as one more use, so its
+		// cooldown restarts one step longer. It comes back later, never at once.
+		const rejected =
+			typeof value.rejectMemeId === "string" ? value.rejectMemeId : undefined;
 		const exclude =
-			typeof value.excludeMemeId === "string" ? value.excludeMemeId : undefined;
+			rejected ??
+			(typeof value.excludeMemeId === "string"
+				? value.excludeMemeId
+				: undefined);
 
-		const model = await resolveModel();
 		const memes = pool().memes;
+		if (rejected && memes.some((meme) => meme.id === rejected))
+			save({
+				...state,
+				usage: {
+					...state.usage,
+					[rejected]: recordUse(
+						state.usage[rejected],
+						Date.now(),
+						state.settings,
+					),
+				},
+			});
+		const model = await resolveModel();
 		if (!memes.length)
 			throw new Error(
 				"The meme pool is empty. Enable the bundled catalogue or add custom memes.",
@@ -308,13 +328,18 @@ export function activate(ctx: PluginBackendContext): () => void {
 		if (memes.every((meme) => tried.has(meme.id))) tried.clear();
 		let failure: unknown;
 		for (let attempt = 0; attempt < MEME_ATTEMPTS; attempt++) {
-			// Step 2: random, skipping memes that are cooling down.
-			const id = pickMeme(
-				memes
-					.map((meme) => meme.id)
-					.filter((candidate) => !tried.has(candidate)),
+			// Step 2: random, skipping memes that are cooling down; own memes first.
+			const candidates = memes.filter((meme) => !tried.has(meme.id));
+			const id = pickPreferred(
+				candidates.map((meme) => meme.id),
+				new Set(
+					candidates
+						.filter((meme) => meme.origin === "custom")
+						.map((meme) => meme.id),
+				),
 				state.usage,
 				Date.now(),
+				OWN_MEMES.share,
 			);
 			const meme = memes.find((candidate) => candidate.id === id);
 			if (!meme) break;

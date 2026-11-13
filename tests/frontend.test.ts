@@ -318,6 +318,14 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 		operation: "generate",
 		input: { prompt: "Who backed CUDA?", excludeMemeId: "custom:a" },
 	});
+	// Rejecting it also asks for another, and tells the backend to cool it down longer.
+	assert.equal(f.button("Not this one").props.disabled, false);
+	await (f.button("Not this one").props.onClick as () => Promise<void>)();
+	assert.deepEqual(f.calls[4], {
+		operation: "generate",
+		input: { prompt: "Who backed CUDA?", rejectMemeId: "custom:a" },
+	});
+	assert.equal(f.button("Not this one").props.disabled, false);
 });
 
 test("pressing the action again closes its surface, and a closed surface reopens", async (t) => {

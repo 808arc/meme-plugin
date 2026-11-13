@@ -633,6 +633,145 @@ test("the custom library skips bad entries and says why", (t) => {
 	assert.match(loadCustomMemes(f.dataDirectory).problems[0]!, /not valid JSON/);
 });
 
+// README "Your own memes", step by step: the documented file, an image beside it.
+test("own memes: the README steps work end to end and come before the catalogue", async (t) => {
+	const readme = fs.readFileSync(
+		new URL("../README.md", import.meta.url),
+		"utf8",
+	);
+	const documented = JSON.parse(
+		/### Your own memes[\s\S]*?```json\n([\s\S]*?)```/.exec(readme)![1]!,
+	) as Record<string, unknown>[];
+	assert.equal(documented.length, 1);
+	const entry: Record<string, unknown> = {
+		...documented[0],
+		caption: [
+			"He discovered America is what he did. He was a brave Italian explorer. And in this house, Christopher Columbus is a hero!",
+		],
+	};
+	const name = entry.name as string;
+	const f = fixture(t, {
+		memes: [entry, { id: "Not OK", name: "x", caption: ["x"] }],
+		reply: (request) => {
+			const meme = f.memeOf(request);
+			if (meme in templates) return {};
+			if (meme !== name)
+				return { stopReason: "error", errorMessage: `asked about ${meme}` };
+			return {
+				text: JSON.stringify(
+					request.context.systemPrompt!.startsWith("You turn the caption")
+						? {
+								lines: [
+									"He {achievement} is what he did. He was a brave {descriptor}. And in this house, {name} is a hero!",
+								],
+								slots: [
+									{
+										name: "achievement",
+										hint: "deed",
+										original: "discovered America",
+									},
+									{
+										name: "descriptor",
+										hint: "who",
+										original: "Italian explorer",
+									},
+									{
+										name: "name",
+										hint: "name",
+										original: "Christopher Columbus",
+									},
+								],
+								voice: "emotional",
+							}
+						: {
+								values: {
+									achievement: "backed CUDA",
+									descriptor: "Taiwanese-American industrialist",
+									name: "Jensen Huang",
+								},
+								emphasis: { after: 1, text: "CUDA!!" },
+								fact: "Jensen Huang backed CUDA.",
+							},
+				),
+			};
+		},
+	});
+	const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]);
+	fs.writeFileSync(
+		path.join(f.dataDirectory, "custom-images", entry.image as string),
+		jpeg,
+	);
+	const { call } = f.start();
+	// Settings: the bundled catalogue is on, the bad entry is skipped and listed.
+	const state = await call<PluginState>("get-state");
+	assert.equal(state.settings.useMemegen, true);
+	assert.equal(state.pool.custom, 1);
+	assert.ok(state.pool.memegen > 150);
+	assert.deepEqual(state.problems.length, 1);
+	assert.match(state.problems[0]!, /entry 2: "id"/);
+
+	// About 200 catalogue memes, yet the own meme is picked first.
+	const meme = await call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	assert.equal(meme.meme.id, "custom:brave-explorer");
+	assert.deepEqual(meme.lines, [
+		"He backed CUDA is what he did. CUDA!! He was a brave Taiwanese-American industrialist. And in this house, Jensen Huang is a hero!",
+	]);
+	assert.deepEqual(await call<MemeImage>("get-image", { id: meme.meme.id }), {
+		mimeType: "image/jpeg",
+		data: jpeg.toString("base64"),
+	});
+
+	// A preference, not a filter: while it cools down, the catalogue takes over.
+	await assert.rejects(
+		call("generate", { prompt: "Who backed CUDA?" }),
+		/asked about/,
+	);
+	assert.notEqual(f.memeOf(f.requests.at(-1)!), name);
+
+	// Edits apply to the next meme, without a restart; a new own meme goes first again.
+	fs.writeFileSync(
+		path.join(f.dataDirectory, "custom-memes.json"),
+		JSON.stringify([entry, custom[1]]),
+	);
+	const fixed = await call<PluginState>("get-state");
+	assert.deepEqual([fixed.pool.custom, fixed.problems], [2, []]);
+	assert.equal(
+		(await call<GeneratedMeme>("generate", { prompt: "What is CUDA?" })).meme
+			.id,
+		"custom:two-panel",
+	);
+});
+
+test("not this one: the rejected meme cools down one step longer and another is shown", async (t) => {
+	const f = fixture(t);
+	const { call } = f.start();
+	await call("save-settings", offline);
+	const first = await call<GeneratedMeme>("generate", { prompt: "x" });
+	const shown = f.stored().usage[first.meme.id];
+	const before = Date.now();
+	const next = await call<GeneratedMeme>("generate", {
+		prompt: "x",
+		rejectMemeId: first.meme.id,
+	});
+	assert.notEqual(next.meme.id, first.meme.id);
+	const rejected = f.stored().usage[first.meme.id];
+	assert.equal(rejected.uses, shown.uses + 1, "a rejection counts as a use");
+	assert.ok(rejected.dueAt >= before + 28 * 86_400_000);
+	assert.equal(f.stored().usage[next.meme.id].uses, 1);
+	// Still in the pool: not deleted, back after its cooldown.
+	assert.equal((await call<PluginState>("get-state")).pool.custom, 2);
+
+	// An id that is not in the pool records nothing.
+	await call("reset-usage");
+	await call<GeneratedMeme>("generate", {
+		prompt: "x",
+		rejectMemeId: "custom:gone",
+	});
+	assert.equal(f.stored().usage["custom:gone"], undefined);
+});
+
 test("the bundled catalogue is well formed", () => {
 	const memes = memegenMemes("https://api.memegen.link");
 	assert.ok(memes.length > 150);

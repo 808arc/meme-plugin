@@ -42,8 +42,9 @@ function mountSurface(
 	const credit = element("p", "meme-plugin-credit");
 	const actions = element("div", "meme-plugin-actions");
 	const anotherSlot = element("span", ""),
+		rejectSlot = element("span", ""),
 		copySlot = element("span", "");
-	actions.append(anotherSlot, copySlot);
+	actions.append(anotherSlot, rejectSlot, copySlot);
 	root.append(heading, conceptLine, body, fact, credit, actions);
 	container.append(root);
 
@@ -84,19 +85,26 @@ function mountSurface(
 		}
 	};
 
-	const run = async () => {
+	/** `rejecting`: the learner turned down the meme on screen ("Not this one"). */
+	const run = async (rejecting = false) => {
 		if (!concept) return;
 		const turn = ++sequence;
 		const stale = () => signal.aborted || turn !== sequence;
 		conceptLine.textContent = concept.prompt;
 		another.update({ disabled: true });
+		reject.update({ disabled: true });
 		copy.update({ disabled: true });
 		status("Picking a meme and writing the caption…");
 		try {
-			// Asking again steers away from the meme that is on screen.
+			// Asking again steers away from the meme that is on screen; rejecting
+			// it also lengthens its cooldown.
 			const next = await ctx.call<GeneratedMeme>("generate", {
 				...concept,
-				...(result ? { excludeMemeId: result.meme.id } : {}),
+				...(result
+					? {
+							[rejecting ? "rejectMemeId" : "excludeMemeId"]: result.meme.id,
+						}
+					: {}),
 			});
 			if (stale()) return;
 			let image: MemeImage | null = null;
@@ -113,6 +121,7 @@ function mountSurface(
 			}
 			show(next, image);
 			another.update({ disabled: false, label: "Another meme" });
+			reject.update({ disabled: false });
 			copy.update({ disabled: false });
 		} catch (error) {
 			if (stale()) return;
@@ -123,7 +132,22 @@ function mountSurface(
 
 	const another = ctx.ui.mountButton(
 		anotherSlot,
-		{ label: "Another meme", variant: "outline", disabled: true, onClick: run },
+		{
+			label: "Another meme",
+			variant: "outline",
+			disabled: true,
+			onClick: () => run(),
+		},
+		{ signal },
+	);
+	const reject = ctx.ui.mountButton(
+		rejectSlot,
+		{
+			label: "Not this one",
+			variant: "ghost",
+			disabled: true,
+			onClick: () => run(true),
+		},
 		{ signal },
 	);
 	const copy = ctx.ui.mountButton(

@@ -50,3 +50,23 @@ export function pickMeme(
 	const soonest = Math.min(...ids.map((id) => usage[id]!.dueAt));
 	return at(ids.filter((id) => usage[id]!.dueAt === soonest));
 }
+
+/** Source order (#21): `preferred` ids (the learner's own memes) are tried first.
+ * While one of them is out of cooldown, it is picked with probability `share`;
+ * otherwise the plain pick over all ids applies. A preference, not a filter: a used
+ * preferred meme cools down like any other, and the rest of the pool takes over. */
+export function pickPreferred(
+	ids: readonly string[],
+	preferred: ReadonlySet<string>,
+	usage: Readonly<Record<string, Usage>>,
+	now: number,
+	share: number,
+	random: () => number = Math.random,
+): string | undefined {
+	const eligible = ids.filter(
+		(id) => preferred.has(id) && !coolingDown(usage, id, now),
+	);
+	if (eligible.length && (share >= 1 || random() < share))
+		return pickMeme(eligible, usage, now, random);
+	return pickMeme(ids, usage, now, random);
+}

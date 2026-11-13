@@ -5,6 +5,7 @@ import {
 	coolingDown,
 	MAX_COOLDOWN_DAYS,
 	pickMeme,
+	pickPreferred,
 	recordUse,
 } from "../src/scheduler.ts";
 import type { Usage } from "../src/types.ts";
@@ -67,4 +68,33 @@ test("an exhausted pool falls back to the meme that is due soonest", () => {
 		"b",
 	);
 	assert.equal(pickMeme([], usage, 100), undefined);
+});
+
+test("own memes are preferred while one is eligible, then the rest rotate in", () => {
+	const ids = ["custom:x", "custom:y", "memegen:a", "memegen:b"];
+	const own = new Set(["custom:x", "custom:y"]);
+	const now = 1_000_000;
+	for (const roll of [0, 0.5, 0.999])
+		assert.ok(own.has(pickPreferred(ids, own, {}, now, 1, () => roll)!));
+	const usage: Record<string, Usage> = {
+		"custom:x": recordUse(undefined, now, settings),
+	};
+	assert.equal(
+		pickPreferred(ids, own, usage, now, 1, () => 0.9),
+		"custom:y",
+	);
+	usage["custom:y"] = recordUse(undefined, now, settings);
+	// Every own meme cooling down: the catalogue takes over.
+	for (const roll of [0, 0.999])
+		assert.ok(!own.has(pickPreferred(ids, own, usage, now, 1, () => roll)!));
+	// A share below 1 mixes the catalogue in: a roll above the share picks from all ids.
+	assert.equal(
+		pickPreferred(ids, own, {}, now, 0.5, () => 0.2),
+		"custom:x",
+	);
+	assert.equal(
+		pickPreferred(ids, own, {}, now, 0.5, () => 0.6),
+		"memegen:a",
+	);
+	assert.equal(pickPreferred([], own, {}, now, 1), undefined);
 });

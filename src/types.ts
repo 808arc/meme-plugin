@@ -95,10 +95,27 @@ export interface Settings {
 	imageBaseUrl: string;
 	/** Experimental: when the teacher agent may add a meme to the chat (tool `meme_teach`). */
 	teacherMemes: TeacherMemes;
+	/** #18: memes that appear on their own after a question's answer is shown. */
+	automaticMemes: AutomaticMemes;
 }
 
 /** off: never. teacher: the teacher decides, within the cap. wrong: only after a wrong answer. */
 export type TeacherMemes = "off" | "teacher" | "wrong";
+
+/** off: never. every: each answered question. nth: every Nth (config). wrong: after a graded wrong answer. */
+export type AutomaticMemes = "off" | "every" | "nth" | "wrong";
+
+/** One answered question, as the frontend saw it in the session history. */
+export interface AutomaticRequest extends Concept {
+	/** Session and question call id; the same question never gets a second automatic meme. */
+	key: string;
+	/** The host graded the answer as wrong. */
+	wrong: boolean;
+}
+
+export type AutomaticResult =
+	| { status: "meme"; meme: GeneratedMeme }
+	| { status: "off" | "seen" | "skipped" | "budget" };
 
 export interface Usage {
 	uses: number;
@@ -110,6 +127,8 @@ export interface Usage {
 export interface PluginState {
 	settings: Settings;
 	pool: { memegen: number; custom: number; coolingDown: number };
+	/** Automatic memes made today against the shared daily budget. */
+	automatic: { used: number; perDay: number };
 	/** Custom-library entries that were skipped, with the reason. */
 	problems: string[];
 }

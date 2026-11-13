@@ -9,9 +9,14 @@ import type {
 	PluginInferenceRequest,
 } from "learnharness-plugin-api";
 import { activate } from "../src/backend.ts";
-import { TEACHER_TOOL } from "../src/config.ts";
+import { BUTTONLESS, TEACHER_TOOL } from "../src/config.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
-import type { GeneratedMeme, MemeImage, PluginState } from "../src/types.ts";
+import type {
+	AutomaticResult,
+	GeneratedMeme,
+	MemeImage,
+	PluginState,
+} from "../src/types.ts";
 
 const cheap = { provider: "fixture", id: "cheap-model" };
 const other = { provider: "fixture", id: "other-model" };
@@ -434,6 +439,7 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 		useMemegen: true,
 		imageBaseUrl: "https://api.memegen.link",
 		teacherMemes: "off",
+		automaticMemes: "off",
 	});
 	assert.equal(initial.pool.memegen, memegenMemes("").length);
 	assert.equal(initial.pool.custom, 2);
@@ -738,4 +744,105 @@ test("teacher memes are background work, capped per turns and by the daily budge
 		second.registered[0]!.create({ chatId: "new", agent: "teacher" }).length,
 		0,
 	);
+});
+
+// #18 buttonless mode
+const answer = (key: string, wrong = false) => ({
+	key,
+	prompt: "Who backed CUDA?",
+	wrong,
+});
+
+test("automatic memes are off by default and cost nothing", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const { call } = f.start();
+	await call("save-settings", offline);
+	const result = await call<AutomaticResult>("auto-meme", answer("s:q1"));
+	assert.deepEqual(result, { status: "off" });
+	assert.equal(f.requests.length, 0);
+	await assert.rejects(call("save-settings", { automaticMemes: "always" }));
+	await assert.rejects(call("auto-meme", { prompt: "x" }), /question key/);
+});
+
+test("every Nth answered question gets an automatic meme, each question once, as background work", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const first = f.start();
+	await first.call("save-settings", { ...offline, automaticMemes: "nth" });
+	const statuses: string[] = [];
+	for (let index = 1; index <= BUTTONLESS.everyNth * 2; index++)
+		statuses.push(
+			(await first.call<AutomaticResult>("auto-meme", answer(`s:q${index}`)))
+				.status,
+		);
+	const expected = Array.from(
+		{ length: BUTTONLESS.everyNth * 2 },
+		(_, index) =>
+			(index + 1) % BUTTONLESS.everyNth === 0 ? "meme" : "skipped",
+	);
+	assert.deepEqual(statuses, expected);
+	assert.ok(f.requests.length > 0);
+	assert.ok(f.requests.every((request) => request.purpose === "background"));
+	assert.equal(
+		f.stored().automatic.count,
+		2,
+		"each meme spends the shared budget",
+	);
+	assert.equal((await first.call<PluginState>("get-state")).automatic.used, 2);
+	const requests = f.requests.length;
+	assert.deepEqual(
+		await first.call("auto-meme", answer(`s:q${BUTTONLESS.everyNth}`)),
+		{ status: "seen" },
+	);
+	first.dispose();
+	// Remembered across restarts: still never twice.
+	const second = f.start();
+	assert.deepEqual(await second.call("auto-meme", answer("s:q1")), {
+		status: "seen",
+	});
+	assert.equal(f.requests.length, requests);
+});
+
+test("only after wrong answers, and nothing once the shared daily budget is spent", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const first = f.start();
+	await first.call("save-settings", { ...offline, automaticMemes: "wrong" });
+	assert.deepEqual(await first.call("auto-meme", answer("s:right")), {
+		status: "skipped",
+	});
+	const made = await first.call<AutomaticResult>(
+		"auto-meme",
+		answer("s:wrong", true),
+	);
+	assert.equal(made.status, "meme");
+	assert.equal(
+		made.status === "meme" && made.meme.fact,
+		"Jensen Huang backed CUDA.",
+	);
+	first.dispose();
+
+	const stored = f.stored();
+	stored.automatic = {
+		day: new Date().toLocaleDateString("en-CA"),
+		count: TEACHER_TOOL.automaticMemesPerDay,
+	};
+	fs.writeFileSync(
+		path.join(f.dataDirectory, "state.json"),
+		JSON.stringify(stored),
+	);
+	const second = f.start();
+	const requests = f.requests.length;
+	assert.deepEqual(await second.call("auto-meme", answer("s:late", true)), {
+		status: "budget",
+	});
+	assert.equal(f.requests.length, requests, "no model request over budget");
+	const state = await second.call<PluginState>("get-state");
+	assert.deepEqual(state.automatic, {
+		used: TEACHER_TOOL.automaticMemesPerDay,
+		perDay: TEACHER_TOOL.automaticMemesPerDay,
+	});
+	// Meme this is not automatic and still works.
+	const manual = await second.call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	assert.equal(manual.fact, "Jensen Huang backed CUDA.");
 });

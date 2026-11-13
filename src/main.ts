@@ -1,17 +1,26 @@
 /** Window side of the meme plugin: one session action that opens a page-body
  * surface with the meme, plus the settings page. All state lives in the backend. */
 import type {
+	PluginActionContext,
 	PluginFrontendContext,
 	PluginSettingsRow,
 	PluginSurfaceProps,
+	PluginSurfaceTarget,
 	PluginToolRenderProps,
 	PluginWidgetHandle,
 } from "learnharness-plugin-api";
-import { type ConceptResult, conceptFromView } from "./concept.ts";
-import { TEACHER_TOOL } from "./config.ts";
+import {
+	type AnsweredQuestion,
+	type ConceptResult,
+	conceptFromView,
+	lastAnsweredQuestion,
+} from "./concept.ts";
+import { BUTTONLESS, TEACHER_TOOL } from "./config.ts";
 import { element, mountMeme } from "./render.ts";
 import { imageBaseUrlProblem, LIMITS } from "./settings.ts";
 import type {
+	AutomaticMemes,
+	AutomaticResult,
 	Concept,
 	GeneratedMeme,
 	MemeImage,
@@ -21,6 +30,16 @@ import type {
 
 const ICON =
 	'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01"/><path d="M15 9h.01"/></svg>';
+
+/** #18: a meme the backend already made on its own, shown folded and dismissible. */
+interface Preset {
+	meme: GeneratedMeme;
+	image: MemeImage | null;
+	dismiss: () => void;
+}
+
+const ordinal = (n: number) =>
+	`${n}${(n % 100 >= 11 && n % 100 <= 13 ? "" : ["", "st", "nd", "rd"][n % 10]) || "th"}`;
 
 const message = (error: unknown) =>
 	error instanceof Error && error.message
@@ -32,12 +51,15 @@ function mountSurface(
 	container: HTMLElement,
 	signal: AbortSignal,
 	found: ConceptResult,
+	preset?: Preset,
 ): () => void {
 	const root = element("div", "meme-plugin-surface");
 	const heading = element("h2", "meme-plugin-heading", "Meme");
-	// The host focuses this marker when the surface opens.
-	heading.tabIndex = -1;
-	heading.setAttribute("data-plugin-initial-focus", "");
+	// The host focuses this marker when the surface opens. An automatic meme takes no focus.
+	if (!preset) {
+		heading.tabIndex = -1;
+		heading.setAttribute("data-plugin-initial-focus", "");
+	}
 	const conceptLine = element("p", "meme-plugin-concept");
 	const body = element("div", "meme-plugin-body");
 	const fact = element("p", "meme-plugin-fact");
@@ -46,7 +68,46 @@ function mountSurface(
 	const anotherSlot = element("span", ""),
 		copySlot = element("span", "");
 	actions.append(anotherSlot, copySlot);
-	root.append(heading, conceptLine, body, fact, credit, actions);
+	const content = [conceptLine, body, fact, credit, actions];
+	if (preset) {
+		// Folded to one line until the learner expands it; Dismiss closes the surface.
+		const fold = element("div", "meme-plugin-fold");
+		fold.append(...content);
+		let folded: boolean = BUTTONLESS.collapsed;
+		fold.hidden = folded;
+		const bar = element("div", "meme-plugin-actions");
+		const toggleSlot = element("span", ""),
+			dismissSlot = element("span", "");
+		bar.append(toggleSlot, dismissSlot);
+		root.append(
+			heading,
+			element(
+				"p",
+				"meme-plugin-concept",
+				"A meme for the question you just answered.",
+			),
+			bar,
+			fold,
+		);
+		const toggle = ctx.ui.mountButton(
+			toggleSlot,
+			{
+				label: folded ? "Show meme" : "Hide meme",
+				variant: "outline",
+				onClick: () => {
+					folded = !folded;
+					fold.hidden = folded;
+					toggle.update({ label: folded ? "Show meme" : "Hide meme" });
+				},
+			},
+			{ signal },
+		);
+		ctx.ui.mountButton(
+			dismissSlot,
+			{ label: "Dismiss", variant: "ghost", onClick: preset.dismiss },
+			{ signal },
+		);
+	} else root.append(heading, ...content);
 	container.append(root);
 
 	let concept: Concept | null = found.status === "found" ? found.concept : null;
@@ -144,7 +205,12 @@ function mountSurface(
 		{ signal },
 	);
 
-	if (found.status === "hidden") {
+	if (preset) {
+		conceptLine.textContent = preset.meme.concept.prompt;
+		show(preset.meme, preset.image);
+		another.update({ disabled: false });
+		copy.update({ disabled: false });
+	} else if (found.status === "hidden") {
 		status("Reveal the question first. A meme would show it early.");
 	} else if (found.status === "none") {
 		status(
@@ -242,6 +308,24 @@ function settingsRows(
 				save({ teacherMemes: value as Settings["teacherMemes"] }),
 		},
 		{
+			type: "dropdown",
+			key: "automaticMemes",
+			label: "Automatic memes",
+			description: `After you answer a question, a meme opens over the page on its own, folded to one line; Dismiss closes it. Each counts toward the ${TEACHER_TOOL.automaticMemesPerDay} automatic memes a day shared with teacher memes.`,
+			value: settings.automaticMemes,
+			options: [
+				{ value: "off", label: "Off" },
+				{ value: "every", label: "Every revealed question" },
+				{
+					value: "nth",
+					label: `Every ${ordinal(BUTTONLESS.everyNth)} revealed question`,
+				},
+				{ value: "wrong", label: "Only after wrong answers" },
+			],
+			onChange: (value) =>
+				save({ automaticMemes: value as Settings["automaticMemes"] }),
+		},
+		{
 			type: "text",
 			key: "imageBaseUrl",
 			label: "Image server",
@@ -259,6 +343,7 @@ function mountSettings(
 	ctx: PluginFrontendContext,
 	container: HTMLElement,
 	signal: AbortSignal,
+	onState: (state: PluginState) => void,
 ): () => void {
 	const root = element("div", "meme-plugin-settings");
 	const loading = element("p", "meme-plugin-settings-note", "Loading…");
@@ -282,6 +367,7 @@ function mountSettings(
 		modelRow.append(pickerSlot, defaultSlot);
 		const rowsSlot = element("div", "");
 		const summary = element("p", "meme-plugin-settings-note");
+		const budget = element("p", "meme-plugin-settings-note");
 		const resetSlot = element("div", "");
 		const problems = element("ul", "meme-plugin-settings-problems");
 		root.append(
@@ -294,6 +380,7 @@ function mountSettings(
 			modelRow,
 			rowsSlot,
 			summary,
+			budget,
 			resetSlot,
 			problems,
 		);
@@ -302,12 +389,18 @@ function mountSettings(
 		const publish = (next: PluginState) => {
 			if (signal.aborted) return;
 			state = next;
+			onState(state);
 			picker.update({ value: state.settings.model ?? undefined });
 			useDefault.update({ disabled: !state.settings.model });
 			rows.update({
 				rows: settingsRows(state.settings, state.pool.memegen, save),
 			});
 			summary.textContent = `Pool: ${state.pool.memegen} bundled and ${state.pool.custom} custom memes, ${state.pool.coolingDown} cooling down.`;
+			const spent = state.automatic.used >= state.automatic.perDay;
+			budget.hidden = !spent;
+			budget.textContent = spent
+				? "Today's automatic memes are used up; none appear on their own until tomorrow. Meme this still works."
+				: "";
 			problems.replaceChildren(
 				...state.problems.map((problem) => element("li", "", problem)),
 			);
@@ -413,12 +506,143 @@ export function activate(ctx: PluginFrontendContext): void {
 		mount: (container, tool) => mountTeacherMeme(ctx, container, tool),
 	});
 
+	const openMeme = (
+		target: PluginSurfaceTarget,
+		found: ConceptResult,
+		preset?: Omit<Preset, "dismiss">,
+	) => {
+		const handle = ctx.ui.openSurface(
+			target,
+			{
+				title: "Meme",
+				content: (container, signal) => {
+					const unmount = mountSurface(
+						ctx,
+						container,
+						signal,
+						found,
+						preset && { ...preset, dismiss: () => handle.dispose() },
+					);
+					// Runs on user close, navigation away and plugin disable alike.
+					return () => {
+						unmount();
+						if (open === handle) open = null;
+					};
+				},
+				onClose: () => {
+					if (open === handle) open = null;
+				},
+			},
+			{ signal: ctx.signal },
+		);
+		open = handle;
+	};
+
+	// #18 buttonless mode. The SDK has no session subscription; the action's dynamic
+	// `disabled` predicate is the one live read of the session view, re-run whenever the
+	// host re-renders the top bar (and on refreshActions). It never disables the action.
+	const activatedAt = Date.now();
+	let automatic: AutomaticMemes | null = null;
+	let loading = false;
+	const handled = new Set<string>();
+	const loadAutomatic = () => {
+		if (loading) return;
+		loading = true;
+		ctx
+			.call<PluginState>("get-state")
+			.then(
+				(state) => {
+					if (ctx.signal.aborted) return;
+					automatic = state.settings.automaticMemes;
+					ctx.refreshActions();
+				},
+				() => {},
+			)
+			.finally(() => {
+				loading = false;
+			});
+	};
+	const deliver = async (
+		target: PluginSurfaceTarget,
+		answered: AnsweredQuestion,
+	) => {
+		let result: AutomaticResult;
+		try {
+			result = await ctx.call<AutomaticResult>("auto-meme", {
+				key: answered.key,
+				...answered.concept,
+				wrong: answered.wrong,
+			});
+		} catch {
+			return; // Automatic: a failure stays quiet; Meme this still works.
+		}
+		if (result.status !== "meme" || ctx.signal.aborted || open) return;
+		let image: MemeImage | null = null;
+		if (result.meme.meme.hasImage)
+			try {
+				image = await ctx.call<MemeImage | null>("get-image", {
+					id: result.meme.meme.id,
+				});
+			} catch {
+				image = null;
+			}
+		if (ctx.signal.aborted || open) return;
+		try {
+			openMeme(
+				target,
+				{ status: "found", concept: result.meme.concept },
+				{ meme: result.meme, image },
+			);
+		} catch {
+			/* the learner left that page */
+		}
+	};
+	const observe = (context: PluginActionContext) => {
+		if (context.surface !== "session" || ctx.signal.aborted) return;
+		if (automatic === null) return loadAutomatic();
+		if (automatic === "off") return;
+		const view = context.view;
+		// Same reveal rule as Meme this: nothing while an unrevealed question is on screen.
+		if (conceptFromView(view).status === "hidden") return;
+		const answered = lastAnsweredQuestion(view);
+		// Only answers given while this window runs; never the same question twice.
+		if (
+			!answered ||
+			handled.has(answered.key) ||
+			!(answered.answeredAt >= activatedAt)
+		)
+			return;
+		handled.add(answered.key);
+		// A meme is already open: the learner has one; this question is done.
+		if (open) return;
+		const target = context.surfaceTarget;
+		queueMicrotask(() => void deliver(target, answered));
+	};
+	ctx.onAppEvent((event) => {
+		if (
+			automatic !== null &&
+			(event.type === "turn-settled" || event.type === "record-changed")
+		)
+			loadAutomatic();
+	});
+	ctx.onResync(() => {
+		if (automatic !== null) loadAutomatic();
+	});
+
 	ctx.registerAction({
 		id: "meme-this",
 		name: "Meme this",
 		icon: ICON,
 		// Listed in Keyboard settings, unbound until the learner assigns a chord.
 		shortcut: { scope: { sessions: ["teaching", "practice"] } },
+		disabled(context) {
+			try {
+				observe(context);
+			} catch {
+				/* watching must never break the action */
+			}
+			return false;
+		},
 		run(context) {
 			if (context.surface !== "session") return;
 			// The same action closes its own surface.
@@ -427,26 +651,7 @@ export function activate(ctx: PluginFrontendContext): void {
 				open = null;
 				return;
 			}
-			const found = conceptFromView(context.view);
-			const handle = ctx.ui.openSurface(
-				context.surfaceTarget,
-				{
-					title: "Meme",
-					content: (container, signal) => {
-						const unmount = mountSurface(ctx, container, signal, found);
-						// Runs on user close, navigation away and plugin disable alike.
-						return () => {
-							unmount();
-							if (open === handle) open = null;
-						};
-					},
-					onClose: () => {
-						if (open === handle) open = null;
-					},
-				},
-				{ signal: ctx.signal },
-			);
-			open = handle;
+			openMeme(context.surfaceTarget, conceptFromView(context.view));
 		},
 	});
 	ctx.placeAction({
@@ -456,6 +661,8 @@ export function activate(ctx: PluginFrontendContext): void {
 		sessions: ["teaching", "practice"],
 	});
 	ctx.registerSettings((container, signal) =>
-		mountSettings(ctx, container, signal),
+		mountSettings(ctx, container, signal, (state) => {
+			automatic = state.settings.automaticMemes;
+		}),
 	);
 }

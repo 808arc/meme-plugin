@@ -10,3 +10,15 @@ export const TEACHER_TOOL = Object.freeze({
 	/** Shared daily budget for automatic memes, counted by local calendar day. */
 	automaticMemesPerDay: 10,
 });
+
+// #18 buttonless mode
+/** Automatic memes after a question's answer is shown. Each one spends the shared
+ * `TEACHER_TOOL.automaticMemesPerDay` budget; there is no second budget. */
+export const BUTTONLESS = Object.freeze({
+	/** "Every Nth revealed question": N. */
+	everyNth: 3,
+	/** An automatic meme opens folded to one line; the learner expands it. */
+	collapsed: true,
+	/** Questions already handled, kept so none gets a second automatic meme. Oldest drop first. */
+	rememberedQuestions: 500,
+});

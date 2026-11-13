@@ -8,7 +8,7 @@ import type {
 	PluginCallPurpose,
 	PluginModelSpec,
 } from "learnharness-plugin-api";
-import { TEACHER_TOOL } from "./config.ts";
+import { BUTTONLESS, TEACHER_TOOL } from "./config.ts";
 import { MAX_CONTEXT_LENGTH, MAX_PROMPT_LENGTH } from "./concept.ts";
 import { loadImage } from "./images.ts";
 import { loadCustomMemes, memegenMemes } from "./library.ts";
@@ -23,6 +23,7 @@ import { coolingDown, pickMeme, recordUse } from "./scheduler.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
 import { assemble, parseFilling, parseTemplate } from "./template.ts";
 import type {
+	AutomaticResult,
 	Concept,
 	GeneratedMeme,
 	Meme,
@@ -62,6 +63,8 @@ interface Stored {
 	templates: Record<string, CachedTemplate>;
 	/** Automatic memes made today; the shared budget in config.ts. */
 	automatic: { day: string; count: number };
+	/** #18: questions that already had their automatic turn, and how many were answered. */
+	buttonless: { seen: string[]; revealed: number };
 }
 
 /** The model answered, but not with something the plugin can accept. */
@@ -85,6 +88,7 @@ function readState(file: string): Stored {
 				usage: {},
 				templates: {},
 				automatic: { day: "", count: 0 },
+				buttonless: { seen: [], revealed: 0 },
 			};
 		throw new Error(
 			`Meme plugin could not read ${STATE_FILE}: ${(error as Error).message}`,
@@ -126,6 +130,23 @@ function readState(file: string): Stored {
 		usage,
 		templates,
 		automatic: readAutomatic(stored.automatic),
+		buttonless: readButtonless(stored.buttonless),
+	};
+}
+
+function readButtonless(value: unknown): Stored["buttonless"] {
+	const item = value as Partial<Stored["buttonless"]> | null | undefined;
+	const revealed = item?.revealed;
+	return {
+		seen: Array.isArray(item?.seen)
+			? item.seen.filter((key): key is string => typeof key === "string")
+			: [],
+		revealed:
+			typeof revealed === "number" &&
+			Number.isInteger(revealed) &&
+			revealed >= 0
+				? revealed
+				: 0,
 	};
 }
 
@@ -170,6 +191,15 @@ export function activate(ctx: PluginBackendContext): () => void {
 		state = next;
 	};
 
+	/** The shared daily budget for automatic memes (teacher tool and buttonless mode). */
+	const automaticUsed = () =>
+		state.automatic.day === dayKey(Date.now()) ? state.automatic.count : 0;
+	const spendAutomatic = () =>
+		save({
+			...state,
+			automatic: { day: dayKey(Date.now()), count: automaticUsed() + 1 },
+		});
+
 	const pool = () => {
 		const custom = loadCustomMemes(ctx.dataDirectory);
 		const memegen = state.settings.useMemegen
@@ -195,6 +225,10 @@ export function activate(ctx: PluginBackendContext): () => void {
 				).length,
 			},
 			problems: current.problems,
+			automatic: {
+				used: automaticUsed(),
+				perDay: TEACHER_TOOL.automaticMemesPerDay,
+			},
 		};
 	};
 
@@ -425,11 +459,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 
 	/** Teacher turns per chat (one per tool-loadout request) and the turn of the last meme. */
 	const turns = new Map<string, { turn: number; memeTurn: number | null }>();
-	const budgetLeft = () => {
-		const today = dayKey(Date.now());
-		const used = state.automatic.day === today ? state.automatic.count : 0;
-		return used < TEACHER_TOOL.automaticMemesPerDay;
-	};
+	const budgetLeft = () => automaticUsed() < TEACHER_TOOL.automaticMemesPerDay;
 	const capReached = (chat: { turn: number; memeTurn: number | null }) =>
 		chat.memeTurn !== null &&
 		chat.turn - chat.memeTurn < TEACHER_TOOL.turnsPerMeme;
@@ -462,15 +492,7 @@ export function activate(ctx: PluginBackendContext): () => void {
 			// Not asked for by the learner: automatic work, classified as background.
 			const meme = await guarded(() => generate(input, "background"));
 			chat.memeTurn = chat.turn;
-			const today = dayKey(Date.now());
-			save({
-				...state,
-				automatic: {
-					day: today,
-					count:
-						(state.automatic.day === today ? state.automatic.count : 0) + 1,
-				},
-			});
+			spendAutomatic();
 			return {
 				content: [
 					{
@@ -532,6 +554,49 @@ export function activate(ctx: PluginBackendContext): () => void {
 			return view();
 		}),
 		ctx.handle("generate", (input) => guarded(() => generate(input, "user"))),
+		// #18: the frontend saw an answered question; the backend decides whether it gets a meme.
+		ctx.handle("auto-meme", async (input): Promise<AutomaticResult> => {
+			alive();
+			const value = object(input);
+			const key = typeof value.key === "string" ? value.key : "";
+			if (!key || key.length > 1000)
+				throw new Error("An automatic meme needs a question key.");
+			const frequency = state.settings.automaticMemes;
+			// #17: an automatic meme states the answer, so it runs in Answer mode only.
+			const mode = (state.settings as { mode?: unknown }).mode;
+			if (frequency === "off" || (mode !== undefined && mode !== "answer"))
+				return { status: "off" };
+			if (state.buttonless.seen.includes(key)) return { status: "seen" };
+			// Marked before any model call: a failed or skipped question is never retried.
+			const revealed = state.buttonless.revealed + 1;
+			save({
+				...state,
+				buttonless: {
+					seen: [...state.buttonless.seen, key].slice(
+						-BUTTONLESS.rememberedQuestions,
+					),
+					revealed,
+				},
+			});
+			if (
+				(frequency === "nth" && revealed % BUTTONLESS.everyNth !== 0) ||
+				(frequency === "wrong" && value.wrong !== true)
+			)
+				return { status: "skipped" };
+			if (!budgetLeft()) return { status: "budget" };
+			// Not asked for by the learner: background work, like the teacher tool.
+			const meme = await guarded(() =>
+				generate(
+					{
+						prompt: value.prompt,
+						...(value.context !== undefined ? { context: value.context } : {}),
+					},
+					"background",
+				),
+			);
+			spendAutomatic();
+			return { status: "meme", meme };
+		}),
 		ctx.handle("get-image", async (input): Promise<MemeImage | null> => {
 			alive();
 			const id = object(input).id;

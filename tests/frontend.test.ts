@@ -37,6 +37,7 @@ const state: PluginState = {
 	nextMode: "answer",
 	settings: {
 		model: null,
+		captionModel: null,
 		emphasis: true,
 		cooldownDays: 14,
 		cooldownGrowth: 2,
@@ -49,6 +50,7 @@ const state: PluginState = {
 		searchAgent: null,
 		searchProvider: "none",
 		mode: "answer",
+		tone: "none",
 		teacherMemes: "off",
 		automaticMemes: "off",
 	},
@@ -549,6 +551,7 @@ test("settings publish only what the backend accepted", async (t) => {
 		rows().map((row) => [row.key, row.type, row.value]),
 		[
 			["mode", "dropdown", "answer"],
+			["tone", "dropdown", "none"],
 			["emphasis", "toggle", true],
 			["cooldownDays", "number", 14],
 			["cooldownGrowth", "number", 2],

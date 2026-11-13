@@ -1,6 +1,12 @@
 /** Settings defaults and validation, shared by the backend (authority) and the
  * settings page (inline validation). */
-import { MEME_MODES, type MemeMode, OWN_MEMES } from "./config.ts";
+import {
+	MEME_MODES,
+	type MemeMode,
+	OWN_MEMES,
+	TONES,
+	type Tone,
+} from "./config.ts";
 import type {
 	AutomaticMemes,
 	SearchProvider,
@@ -29,6 +35,7 @@ export const AUTOMATIC_MEMES: readonly AutomaticMemes[] = Object.freeze([
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	model: null,
+	captionModel: null,
 	emphasis: true,
 	cooldownDays: 14,
 	cooldownGrowth: 2,
@@ -41,6 +48,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	searchAgent: null,
 	searchProvider: "none",
 	mode: MEME_MODES.defaultMode,
+	tone: "none",
 	teacherMemes: "off",
 	automaticMemes: "off",
 });
@@ -101,9 +109,10 @@ export function applySettingsPatch(
 	const next: Settings = { ...current };
 	for (const [key, value] of Object.entries(patch)) {
 		switch (key) {
-			case "model": {
+			case "model":
+			case "captionModel": {
 				if (value === null) {
-					next.model = null;
+					next[key] = null;
 					break;
 				}
 				const model = value as { provider?: unknown; id?: unknown } | undefined;
@@ -115,8 +124,8 @@ export function applySettingsPatch(
 					typeof model.id !== "string" ||
 					!model.id
 				)
-					throw new Error("model must be {provider, id} or null");
-				next.model = { provider: model.provider, id: model.id };
+					throw new Error(`${key} must be {provider, id} or null`);
+				next[key] = { provider: model.provider, id: model.id };
 				break;
 			}
 			case "searchAgent": {
@@ -179,6 +188,11 @@ export function applySettingsPatch(
 				if (!MEME_MODES.modes.includes(value as MemeMode))
 					throw new Error(`mode must be one of ${MEME_MODES.modes.join(", ")}`);
 				next.mode = value as MemeMode;
+				break;
+			case "tone":
+				if (!TONES.includes(value as Tone))
+					throw new Error(`tone must be one of ${TONES.join(", ")}`);
+				next.tone = value as Tone;
 				break;
 			case "teacherMemes":
 				if (!TEACHER_MEMES.includes(value as TeacherMemes))

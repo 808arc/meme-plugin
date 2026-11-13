@@ -1,5 +1,5 @@
 /** Shapes shared by the backend, the frontend and the tests. JSON-compatible only. */
-import type { ConcreteMode, MemeMode } from "./config.ts";
+import type { ConcreteMode, MemeMode, Tone } from "./config.ts";
 
 /** Where one caption line is drawn, as fractions of the image (memegen's model). */
 export interface Box {
@@ -110,6 +110,8 @@ export interface GeneratedMeme {
 export interface Settings {
 	/** Explicit model; null uses the host's configured cheap slot. */
 	model: { provider: string; id: string } | null;
+	/** #36: model for the caption step only. Null: the same model as the other steps. */
+	captionModel: { provider: string; id: string } | null;
 	/** Step 5 of the README. */
 	emphasis: boolean;
 	/** Days a meme stays out of rotation after its first use. 0 disables the cooldown. */
@@ -135,6 +137,8 @@ export interface Settings {
 	searchProvider: SearchProvider;
 	/** #17: what the caption does. Answer states the fact (default). #32: Shuffle cycles the concrete modes. */
 	mode: MemeMode;
+	/** #36: comic tone of the caption wording. "none" (default) adds nothing. Facts never change. */
+	tone: Tone;
 	/** Experimental: when the teacher agent may add a meme to the chat (tool `meme_teach`). */
 	teacherMemes: TeacherMemes;
 	/** #18: memes that appear on their own after a question's answer is shown. */

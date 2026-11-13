@@ -25,6 +25,7 @@ import {
 	STAGE_TOPIC,
 	STAGES,
 	TEACHER_TOOL,
+	TONES,
 } from "./config.ts";
 import { element, memePng, mountMeme } from "./render.ts";
 import {
@@ -474,6 +475,19 @@ function settingsRows(
 			onChange: (mode) => save({ mode: mode as MemeMode }),
 		},
 		{
+			type: "dropdown",
+			key: "tone",
+			label: "Tone",
+			description:
+				"Gives the caption a comic tone: deadpan, absurd, sarcastic, self-deprecating or playful. The facts and the accuracy rules stay the same.",
+			value: settings.tone,
+			options: TONES.map((value) => ({
+				value,
+				label: value[0]!.toUpperCase() + value.slice(1),
+			})),
+			onChange: (tone) => save({ tone: tone as Settings["tone"] }),
+		},
+		{
 			type: "toggle",
 			key: "emphasis",
 			label: "Add emphasis",
@@ -647,6 +661,11 @@ function mountSettings(
 		const pickerSlot = element("span", ""),
 			defaultSlot = element("span", "");
 		modelRow.append(pickerSlot, defaultSlot);
+		// #36: the caption step only; null uses the Model above (or the cheap slot).
+		const captionRow = element("div", "meme-plugin-settings-model");
+		const captionPickerSlot = element("span", ""),
+			captionDefaultSlot = element("span", "");
+		captionRow.append(captionPickerSlot, captionDefaultSlot);
 		const searchRow = element("div", "meme-plugin-settings-model");
 		const searchSlot = element("span", "");
 		searchRow.append(searchSlot);
@@ -665,6 +684,13 @@ function mountSettings(
 				"Writes the captions. Each meme costs one or two short requests. Default: the cheap model slot.",
 			),
 			modelRow,
+			element("p", "meme-plugin-settings-label", "Caption model"),
+			element(
+				"p",
+				"meme-plugin-settings-note",
+				"Writes the caption text only. Default: the Model above, or the cheap slot. Picking the meme and checking the fact keep the Model above.",
+			),
+			captionRow,
 			element("p", "meme-plugin-settings-label", "Search agent"),
 			element(
 				"p",
@@ -692,6 +718,8 @@ function mountSettings(
 				? "Today's automatic memes are used up; none appear on their own until tomorrow. Meme this still works."
 				: "";
 			picker.update({ value: state.settings.model ?? undefined });
+			captionPicker.update({ value: state.settings.captionModel ?? undefined });
+			captionDefault.update({ disabled: !state.settings.captionModel });
 			searchPicker.update({ value: state.settings.searchAgent ?? undefined });
 			useDefault.update({ disabled: !state.settings.model });
 			rows.update({
@@ -716,6 +744,25 @@ function mountSettings(
 				value: undefined,
 				onChange: (model) =>
 					save({ model: { provider: model.provider, id: model.id } }),
+			},
+			{ signal },
+		);
+		const captionPicker = ctx.ui.mountModelPicker(
+			captionPickerSlot,
+			{
+				value: undefined,
+				onChange: (model) =>
+					save({ captionModel: { provider: model.provider, id: model.id } }),
+			},
+			{ signal },
+		);
+		const captionDefault = ctx.ui.mountButton(
+			captionDefaultSlot,
+			{
+				label: "Use default",
+				variant: "outline",
+				size: "sm",
+				onClick: () => save({ captionModel: null }),
 			},
 			{ signal },
 		);

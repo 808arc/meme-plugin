@@ -156,3 +156,15 @@ export const TAVILY = Object.freeze({
 	/** Most images mapped to hits per reply. */
 	maxImages: 10,
 });
+
+// #36 comic effect
+/** Tone presets for the caption wording (wording in src/prompts.ts). "none" adds nothing. */
+export const TONES = Object.freeze([
+	"none",
+	"deadpan",
+	"absurd",
+	"sarcastic",
+	"self-deprecating",
+	"playful",
+] as const);
+export type Tone = (typeof TONES)[number];

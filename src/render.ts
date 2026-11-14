@@ -50,10 +50,10 @@ export function mountMeme(
 	result: GeneratedMeme,
 	image: MemeImage | null,
 ): () => void {
-	const figure = element("figure", "meme-plugin-figure");
+	const figure = element("figure", "meme-figure");
 	const stage = element(
 		"div",
-		image ? "meme-plugin-stage" : "meme-plugin-stage meme-plugin-stage-text",
+		image ? "meme-stage" : "meme-stage meme-stage-text",
 	);
 	figure.append(stage);
 	container.append(figure);
@@ -61,11 +61,11 @@ export function mountMeme(
 
 	if (!image) {
 		for (const line of result.lines)
-			if (line) stage.append(element("p", "meme-plugin-line", line));
+			if (line) stage.append(element("p", "meme-line", line));
 		return () => cleanup.forEach((run) => run());
 	}
 
-	const picture = element("img", "meme-plugin-image");
+	const picture = element("img", "meme-image");
 	picture.alt = `${result.meme.name} meme`;
 	picture.src = `data:${image.mimeType};base64,${image.data}`;
 	stage.append(picture);
@@ -73,7 +73,7 @@ export function mountMeme(
 	result.lines.forEach((line, index) => {
 		const spec = result.meme.boxes[index];
 		if (!line || !spec) return;
-		const box = element("div", "meme-plugin-box");
+		const box = element("div", "meme-box");
 		box.style.left = `${spec.x * 100}%`;
 		box.style.top = `${spec.y * 100}%`;
 		box.style.width = `${spec.w * 100}%`;
@@ -82,8 +82,8 @@ export function mountMeme(
 		const text = element(
 			"div",
 			spec.color === "black"
-				? "meme-plugin-text meme-plugin-text-dark"
-				: "meme-plugin-text",
+				? "meme-text meme-text-dark"
+				: "meme-text",
 			styled(line, spec.style),
 		);
 		text.style.fontFamily = FONTS[spec.font];

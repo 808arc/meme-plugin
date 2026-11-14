@@ -1,4 +1,4 @@
-# meme-plugin
+# meme
 
 Turns each concept asked by learnharness about into a meme.
 
@@ -9,7 +9,7 @@ Turns each concept asked by learnharness about into a meme.
 ## How it works
 
 1. Take the concept from the learnharness prompt.
-2. Pick random image meme, your own first. Store used; skip during cooldown (reverse spaced repetition). Picks ignore the concept for now ([#4](https://github.com/808arc/meme-plugin/issues/4)).
+2. Pick random image meme, your own first. Store used; skip during cooldown (reverse spaced repetition). Picks ignore the concept for now ([#4](https://github.com/808arc/meme/issues/4)).
 3. Reduce caption to template: fixed phrasing + fillable slots.
 4. Fill the slots with facts about the concept.
 5. Optionally add emphasis in the meme character's voice.
@@ -66,15 +66,15 @@ A chord for **Meme this** is set in Settings → Keyboard. It is unbound until y
 Requires LearnHarness 0.6.0 or newer and Node.js 20+ for building.
 
 ```sh
-git clone <this-repository> "<plugins-directory>/meme-plugin"
-cd "<plugins-directory>/meme-plugin"
+git clone <this-repository> "<plugins-directory>/meme"
+cd "<plugins-directory>/meme"
 cp -r "<learnharness-plugins-skill>/types" .sdk
 npm install
 npm run build
 ```
 
 `<plugins-directory>` is shown in **Settings → Community plugins**. Folder must be
-named `meme-plugin`. Refresh list. Enable **Meme plugin**. Restart LearnHarness after code changes.
+named `meme`. Refresh list. Enable **Meme plugin**. Restart LearnHarness after code changes.
 
 Building somewhere else: `npm run install:local -- "<plugins-directory>"` builds and
 replaces only the installed `dist/`.
@@ -111,11 +111,11 @@ When every meme is cooling down, the one that becomes eligible soonest is used.
 
 Each question runs these steps in order, stopping at the first hit:
 
-1. Earlier meme for the same question in the same mode, reused as a limited share of picks. Shipped ([#9](https://github.com/808arc/meme-plugin/issues/9)).
-2. Web search for an existing meme. Answer mode only; on by default; needs a search agent you configure ([#11](https://github.com/808arc/meme-plugin/issues/11)).
-3. Template: your own memes first (100% by default), then the bundled catalogue. The model picks a fitting one; dated templates rank last ([#4](https://github.com/808arc/meme-plugin/issues/4), [#6](https://github.com/808arc/meme-plugin/issues/6), [#21](https://github.com/808arc/meme-plugin/issues/21)).
-4. Caption: the model fills the template. Answer states the fact; Hint points at it; Think asks you to pick ([#4](https://github.com/808arc/meme-plugin/issues/4), [#17](https://github.com/808arc/meme-plugin/issues/17)).
-5. Check: Answer runs the fact check ([#7](https://github.com/808arc/meme-plugin/issues/7)); Hint and Think run the no-answer check ([#17](https://github.com/808arc/meme-plugin/issues/17)).
+1. Earlier meme for the same question in the same mode, reused as a limited share of picks. Shipped ([#9](https://github.com/808arc/meme/issues/9)).
+2. Web search for an existing meme. Answer mode only; on by default; needs a search agent you configure ([#11](https://github.com/808arc/meme/issues/11)).
+3. Template: your own memes first (100% by default), then the bundled catalogue. The model picks a fitting one; dated templates rank last ([#4](https://github.com/808arc/meme/issues/4), [#6](https://github.com/808arc/meme/issues/6), [#21](https://github.com/808arc/meme/issues/21)).
+4. Caption: the model fills the template. Answer states the fact; Hint points at it; Think asks you to pick ([#4](https://github.com/808arc/meme/issues/4), [#17](https://github.com/808arc/meme/issues/17)).
+5. Check: Answer runs the fact check ([#7](https://github.com/808arc/meme/issues/7)); Hint and Think run the no-answer check ([#17](https://github.com/808arc/meme/issues/17)).
 
 If no relevant meme is found, the plugin generates a new caption straight away.
 
@@ -124,7 +124,7 @@ Reject a meme with **Not this one** to see another. Shipped. It counts as a use:
 ### Your own memes
 
 The bundled catalogue is classic rather than current. Add any meme you like, such as
-the one in the example above, in `<plugins-directory>/meme-plugin/data/custom-memes.json`:
+the one in the example above, in `<plugins-directory>/meme/data/custom-memes.json`:
 
 ```json
 [
@@ -163,7 +163,7 @@ deletes your files.
   per meme. Images are cached in `data/image-cache/`.
 - Nothing else. Writes only in `data/`, even with a custom memes folder elsewhere
   (read only) and for exports. Learning records untouched.
-- Web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme-plugin/issues/11)). Tavily, when chosen: the concept goes to Tavily as the query ([#31](https://github.com/808arc/meme-plugin/issues/31)). A settings switch turns it off.
+- Web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme/issues/11)). Tavily, when chosen: the concept goes to Tavily as the query ([#31](https://github.com/808arc/meme/issues/31)). A settings switch turns it off.
 - Loading a web meme's image exposes your IP address to the host of that image.
 
 ## Development
@@ -190,25 +190,25 @@ original caption. Plugin assembles final text; fixed phrasing cannot be reworded
 - Facts come from the model and are not checked against a source.
 - Text placement follows memegen's box positions; rotated boxes are approximate.
 - Animated memes are shown as a still image.
-- Bundled catalogue is dated. Tagging and filtering planned ([#6](https://github.com/808arc/meme-plugin/issues/6)).
+- Bundled catalogue is dated. Tagging and filtering planned ([#6](https://github.com/808arc/meme/issues/6)).
 
 ## Planned
 
 Open issues. Not in the current build.
 
-- Buttonless mode: memes appear on their own after an answer. Off by default. Shipped: setting **Automatic memes** ([#18](https://github.com/808arc/meme-plugin/issues/18)); asked trigger ([#38](https://github.com/808arc/meme-plugin/issues/38)).
-- Like or dislike any meme; save favourites in a local library ([#19](https://github.com/808arc/meme-plugin/issues/19)).
-- Elastic cooldown and meme choice on top of the user knowledge graph. Needs a decision on learner strength first ([#20](https://github.com/808arc/meme-plugin/issues/20)).
-- Memes as spaced-repetition cards, with optional quizzes ([#22](https://github.com/808arc/meme-plugin/issues/22)).
-- Choose memes by graph tags: plugin picks, learner picks, as independent toggles that can be on together ([#23](https://github.com/808arc/meme-plugin/issues/23)).
-- Pick a meme that fits the concept; ask for humor that stays accurate ([#4](https://github.com/808arc/meme-plugin/issues/4)).
-- Eval: score fit, humor and accuracy before and after prompt changes ([#5](https://github.com/808arc/meme-plugin/issues/5)).
-- Check the caption's fact against the question's answer options ([#7](https://github.com/808arc/meme-plugin/issues/7)).
-- Inline meme in the question card, with progress states, 👍/👎 and copy image ([#8](https://github.com/808arc/meme-plugin/issues/8)).
-- Reuse earlier memes for the same concept, stored locally ([#9](https://github.com/808arc/meme-plugin/issues/9)).
-- Teacher agent tool to drop memes into the chat. Needs design ([#10](https://github.com/808arc/meme-plugin/issues/10)).
-- Web search for existing memes, on by default, through a user-configured search agent. Sends the concept to that agent's providers ([#11](https://github.com/808arc/meme-plugin/issues/11)).
-- CI, and a release zip of `dist/`, so installs don't need a local build ([#3](https://github.com/808arc/meme-plugin/issues/3)).
+- Buttonless mode: memes appear on their own after an answer. Off by default. Shipped: setting **Automatic memes** ([#18](https://github.com/808arc/meme/issues/18)); asked trigger ([#38](https://github.com/808arc/meme/issues/38)).
+- Like or dislike any meme; save favourites in a local library ([#19](https://github.com/808arc/meme/issues/19)).
+- Elastic cooldown and meme choice on top of the user knowledge graph. Needs a decision on learner strength first ([#20](https://github.com/808arc/meme/issues/20)).
+- Memes as spaced-repetition cards, with optional quizzes ([#22](https://github.com/808arc/meme/issues/22)).
+- Choose memes by graph tags: plugin picks, learner picks, as independent toggles that can be on together ([#23](https://github.com/808arc/meme/issues/23)).
+- Pick a meme that fits the concept; ask for humor that stays accurate ([#4](https://github.com/808arc/meme/issues/4)).
+- Eval: score fit, humor and accuracy before and after prompt changes ([#5](https://github.com/808arc/meme/issues/5)).
+- Check the caption's fact against the question's answer options ([#7](https://github.com/808arc/meme/issues/7)).
+- Inline meme in the question card, with progress states, 👍/👎 and copy image ([#8](https://github.com/808arc/meme/issues/8)).
+- Reuse earlier memes for the same concept, stored locally ([#9](https://github.com/808arc/meme/issues/9)).
+- Teacher agent tool to drop memes into the chat. Needs design ([#10](https://github.com/808arc/meme/issues/10)).
+- Web search for existing memes, on by default, through a user-configured search agent. Sends the concept to that agent's providers ([#11](https://github.com/808arc/meme/issues/11)).
+- CI, and a release zip of `dist/`, so installs don't need a local build ([#3](https://github.com/808arc/meme/issues/3)).
 
 ## Research
 

@@ -1,9 +1,9 @@
-/** Host check, run from a LearnHarness checkout (not by `npm test`): the BUILT meme-plugin package is
+/** Host check, run from a LearnHarness checkout (not by `npm test`): the BUILT meme package is
  * installed with the portable installer and loaded by the real LearnHarness plugin
  * host and inference adapter, against a scripted off-network model.
  *
- *   cp tests/host/meme-plugin-host.test.ts "<learnharness-checkout>/tests/"
- *   cd "<learnharness-checkout>" && MEME_PLUGIN_PROJECT="<this-project>" npx tsx --test tests/meme-plugin-host.test.ts
+ *   cp tests/host/meme-host.test.ts "<learnharness-checkout>/tests/"
+ *   cd "<learnharness-checkout>" && MEME_PLUGIN_PROJECT="<this-project>" npx tsx --test tests/meme-host.test.ts
  *
  * Build this project first. Written against LearnHarness v0.6.0. */
 import assert from "node:assert/strict";
@@ -71,7 +71,7 @@ const filling = {
 };
 
 for (const appVersion of ["0.6.0", "0.5.0"])
-	test(`built meme-plugin in the real plugin host (app ${appVersion})`, async (t) => {
+	test(`built meme in the real plugin host (app ${appVersion})`, async (t) => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "meme-host-"));
 		const plugins = path.join(root, "plugins");
 		fs.mkdirSync(plugins);
@@ -81,8 +81,8 @@ for (const appVersion of ["0.6.0", "0.5.0"])
 			[path.join(PROJECT, "scripts", "install-plugin-local.mjs"), plugins],
 			{ cwd: PROJECT, encoding: "utf8" },
 		);
-		assert.match(installed, /Installed: .*meme-plugin[\\/]dist/);
-		const data = path.join(plugins, "meme-plugin", "data");
+		assert.match(installed, /Installed: .*meme[\\/]dist/);
+		const data = path.join(plugins, "meme", "data");
 		fs.mkdirSync(data);
 		fs.writeFileSync(
 			path.join(data, "custom-memes.json"),
@@ -178,10 +178,10 @@ for (const appVersion of ["0.6.0", "0.5.0"])
 			fs.rmSync(root, { recursive: true, force: true });
 		});
 		const call = (operation: string, input?: unknown) =>
-			host.call("meme-plugin", operation, input);
+			host.call("meme", operation, input);
 
 		await host.initialize();
-		const listed = host.list().find((info) => info.id === "meme-plugin");
+		const listed = host.list().find((info) => info.id === "meme");
 		if (appVersion === "0.5.0") {
 			// minAppVersion 0.6.0: an older app reports the package without evaluating it.
 			assert.equal(listed?.status, "error");
@@ -205,9 +205,9 @@ for (const appVersion of ["0.6.0", "0.5.0"])
 		);
 		await assert.rejects(call("get-state"));
 
-		await host.setEnabled("meme-plugin", true);
+		await host.setEnabled("meme", true);
 		assert.equal(
-			host.list().find((info) => info.id === "meme-plugin")?.status,
+			host.list().find((info) => info.id === "meme")?.status,
 			"active",
 			host.list()[0]?.error,
 		);
@@ -252,7 +252,7 @@ for (const appVersion of ["0.6.0", "0.5.0"])
 		);
 		assert.equal(stored.usage["custom:proud-speech"].uses, 1);
 		assert.deepEqual(
-			fs.readdirSync(path.join(plugins, "meme-plugin", "dist")).sort(),
+			fs.readdirSync(path.join(plugins, "meme", "dist")).sort(),
 			[
 				"LICENSE",
 				"README.md",
@@ -264,10 +264,10 @@ for (const appVersion of ["0.6.0", "0.5.0"])
 			],
 		);
 
-		await host.setEnabled("meme-plugin", false);
+		await host.setEnabled("meme", false);
 		await assert.rejects(call("generate", { prompt: "x" }));
 		// Re-enable: settings, cooldowns and the cached template survive; one request per meme now.
-		await host.setEnabled("meme-plugin", true);
+		await host.setEnabled("meme", true);
 		assert.equal(
 			((await call("get-state")) as { pool: { coolingDown: number } }).pool
 				.coolingDown,

@@ -95,7 +95,7 @@ function fixture(
 	} = {},
 ) {
 	const dataDirectory = fs.mkdtempSync(
-		path.join(os.tmpdir(), "meme-plugin-test-"),
+		path.join(os.tmpdir(), "meme-test-"),
 	);
 	t.after(() => fs.rmSync(dataDirectory, { recursive: true, force: true }));
 	if (options.memes !== null) {
@@ -120,7 +120,7 @@ function fixture(
 		const ctx = {
 			manifest: {
 				apiVersion: 1,
-				id: "meme-plugin",
+				id: "meme",
 				name: "Meme plugin",
 				version: "0.1.0",
 				minAppVersion: "0.6.0",
@@ -983,7 +983,7 @@ test("not this one: the rejected meme cools down one step longer and another is 
 
 test("own memes can live outside data/: only read, and exported into data/", async (t) => {
 	const f = fixture(t, { memes: null });
-	const outside = fs.mkdtempSync(path.join(os.tmpdir(), "meme-plugin-own-"));
+	const outside = fs.mkdtempSync(path.join(os.tmpdir(), "meme-own-"));
 	t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
 	fs.writeFileSync(
 		path.join(outside, "custom-memes.json"),

@@ -55,7 +55,7 @@ const state: PluginState = {
 		automaticMemes: "off",
 	},
 	pool: { memegen: 209, custom: 1, coolingDown: 3 },
-	customFolder: "/plugins/meme-plugin/data",
+	customFolder: "/plugins/meme/data",
 	problems: ["custom-memes.json entry 2: bad"],
 	searchKeyFound: false,
 	automatic: { used: 0, perDay: 10 },
@@ -278,7 +278,7 @@ function fixture(
 		requestIds,
 		notify: (topic: string, data: unknown) => {
 			for (const listener of [...listeners])
-				listener({ pluginId: "meme-plugin", topic, data });
+				listener({ pluginId: "meme", topic, data });
 		},
 		listeners,
 		actions,
@@ -331,7 +331,7 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 	const surface = f.surfaces[0]!;
 	assert.equal(surface.props.title, "Meme");
 	assert.match(
-		surface.container.querySelector(".meme-plugin-status")!.textContent!,
+		surface.container.querySelector(".meme-status")!.textContent!,
 		/Finding a fitting meme/,
 	);
 	assert.ok(surface.container.querySelector("[data-plugin-initial-focus]"));
@@ -342,11 +342,11 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 		{ operation: "get-image", input: { id: "custom:a" } },
 	]);
 	const image = surface.container.querySelector(
-		"img.meme-plugin-image",
+		"img.meme-image",
 	) as HTMLImageElement;
 	assert.equal(image.getAttribute("src"), "data:image/png;base64,AAAA");
 	assert.equal(image.alt, "Name of custom:a meme");
-	const texts = [...surface.container.querySelectorAll(".meme-plugin-text")];
+	const texts = [...surface.container.querySelectorAll(".meme-text")];
 	assert.deepEqual(
 		texts.map((node) => node.textContent),
 		["HE BACKED CUDA", hostile.toUpperCase()],
@@ -358,7 +358,7 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 		"model text never becomes an element",
 	);
 	const boxes = [
-		...surface.container.querySelectorAll(".meme-plugin-box"),
+		...surface.container.querySelectorAll(".meme-box"),
 	] as HTMLElement[];
 	assert.deepEqual(
 		boxes.map((box) => [
@@ -373,15 +373,15 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 		],
 	);
 	assert.equal(
-		surface.container.querySelector(".meme-plugin-concept")!.textContent,
+		surface.container.querySelector(".meme-concept")!.textContent,
 		"Who backed CUDA?",
 	);
 	assert.equal(
-		surface.container.querySelector(".meme-plugin-fact")!.textContent,
+		surface.container.querySelector(".meme-fact")!.textContent,
 		"Jensen Huang backed CUDA.",
 	);
 	const link = surface.container.querySelector(
-		".meme-plugin-credit a",
+		".meme-credit a",
 	) as HTMLAnchorElement;
 	assert.deepEqual(
 		[link.getAttribute("href"), link.target, link.rel],
@@ -414,7 +414,7 @@ test("pressing the action again closes its surface, and a closed surface reopens
 	void f.press(question);
 	await settle();
 	assert.equal(
-		f.surfaces[0]!.container.querySelector(".meme-plugin-line")!.textContent,
+		f.surfaces[0]!.container.querySelector(".meme-line")!.textContent,
 		"x",
 		"no image: the caption shows as text",
 	);
@@ -464,15 +464,15 @@ test("failures are shown with a retry; an image failure falls back to text", asy
 	await settle();
 	const surface = f.surfaces[0]!.container;
 	assert.equal(
-		surface.querySelector(".meme-plugin-error")!.textContent,
+		surface.querySelector(".meme-error")!.textContent,
 		"Choose a model in the Meme plugin settings.",
 	);
 	const retry = f.button("Try again");
 	assert.equal(retry.props.disabled, false);
 	await (retry.props.onClick as () => Promise<void>)();
-	assert.equal(surface.querySelector(".meme-plugin-error"), null);
+	assert.equal(surface.querySelector(".meme-error"), null);
 	assert.deepEqual(
-		[...surface.querySelectorAll(".meme-plugin-line")].map(
+		[...surface.querySelectorAll(".meme-line")].map(
 			(node) => node.textContent,
 		),
 		["first", "second"],
@@ -487,7 +487,7 @@ test("an unrevealed question is not read; with no question the learner types a c
 	void f.press({ ...question, revealed: false });
 	await settle();
 	assert.match(
-		f.surfaces[0]!.container.querySelector(".meme-plugin-status")!.textContent!,
+		f.surfaces[0]!.container.querySelector(".meme-status")!.textContent!,
 		/Reveal the question first/,
 	);
 	// #17: the mode is looked up; the question itself is not sent anywhere.
@@ -498,7 +498,7 @@ test("an unrevealed question is not read; with no question the learner types a c
 	void f.press({ type: "text" });
 	await settle();
 	assert.match(
-		f.surfaces[1]!.container.querySelector(".meme-plugin-status")!.textContent!,
+		f.surfaces[1]!.container.querySelector(".meme-status")!.textContent!,
 		/Type the concept/,
 	);
 	const composer = f.widgets.find((entry) => entry.kind === "composer")!;
@@ -568,7 +568,7 @@ test("settings publish only what the backend accepted", async (t) => {
 	);
 	assert.match(
 		container.textContent!,
-		/Custom memes are read from \/plugins\/meme-plugin\/data\./,
+		/Custom memes are read from \/plugins\/meme\/data\./,
 	);
 	const folder = rows().find((row) => row.key === "customFolder")!;
 	assert.equal(
@@ -584,7 +584,7 @@ test("settings publish only what the backend accepted", async (t) => {
 		/Pool: 209 bundled and 1 custom memes, 3 cooling down\./,
 	);
 	assert.equal(
-		container.querySelector(".meme-plugin-settings-problems li")!.textContent,
+		container.querySelector(".meme-settings-problems li")!.textContent,
 		"custom-memes.json entry 2: bad",
 	);
 	const url = rows().find((row) => row.key === "imageBaseUrl")!;
@@ -646,13 +646,13 @@ test("an unreliable fact shows a short message and the button still makes anothe
 	await settle();
 	const surface = f.surfaces[0]!.container;
 	assert.equal(
-		surface.querySelector(".meme-plugin-error")!.textContent,
+		surface.querySelector(".meme-error")!.textContent,
 		"Couldn't make a reliable meme for this question.",
 	);
 	const retry = f.button("Try again");
 	assert.equal(retry.props.disabled, false);
 	await (retry.props.onClick as () => Promise<void>)();
-	assert.equal(surface.querySelector(".meme-plugin-error"), null);
+	assert.equal(surface.querySelector(".meme-error"), null);
 	assert.equal(f.button("Another meme").props.disabled, false);
 });
 
@@ -669,7 +669,7 @@ test("progress follows the backend's stage events for this request only", async 
 	await settle();
 	const surface = f.surfaces[0]!;
 	const label = () =>
-		surface.container.querySelector(".meme-plugin-status")!.textContent;
+		surface.container.querySelector(".meme-status")!.textContent;
 	assert.equal(label(), "Finding a fitting meme…");
 	const [requestId] = f.requestIds;
 	assert.ok(requestId, "generate carries a request id");
@@ -725,7 +725,7 @@ test("ratings go to the generated meme, show when reopened and roll back on fail
 	await (up.props.onClick as () => Promise<void>)();
 	assert.equal(up.props.label, "👍 Liked", "a failed save rolls back");
 	assert.match(
-		f.surfaces[0]!.container.querySelector(".meme-plugin-notice")!.textContent!,
+		f.surfaces[0]!.container.querySelector(".meme-notice")!.textContent!,
 		/Rating not saved\. disk full/,
 	);
 });
@@ -775,11 +775,11 @@ test("Hint mode reads an unrevealed question through the whitelist and keeps it 
 	]);
 	const surface = f.surfaces[0]!.container;
 	assert.equal(
-		surface.querySelector(".meme-plugin-concept")!.textContent,
+		surface.querySelector(".meme-concept")!.textContent,
 		"Before you reveal the question",
 	);
 	assert.equal(
-		surface.querySelector(".meme-plugin-fact")!.textContent,
+		surface.querySelector(".meme-fact")!.textContent,
 		"Hint: Think of who sells GeForce.",
 	);
 	assert.ok(!surface.textContent!.includes("Who backed CUDA?"));
@@ -808,7 +808,7 @@ test("#32 shuffle: each meme's label shows the mode it was made in", async (t) =
 	void f.press(question);
 	await settle();
 	const fact = () =>
-		f.surfaces[0]!.container.querySelector(".meme-plugin-fact")!.textContent;
+		f.surfaces[0]!.container.querySelector(".meme-fact")!.textContent;
 	assert.equal(fact(), "Answer: Jensen Huang backed CUDA.");
 	await (f.button("Another meme").props.onClick as () => Promise<void>)();
 	assert.equal(fact(), "Hint: Think of who sells GeForce.");
@@ -826,7 +826,7 @@ test("Answer mode still refuses an unrevealed question; revealed options travel 
 	await settle();
 	assert.deepEqual(f.calls, [{ operation: "get-state", input: undefined }]);
 	assert.match(
-		f.surfaces[0]!.container.querySelector(".meme-plugin-status")!.textContent!,
+		f.surfaces[0]!.container.querySelector(".meme-status")!.textContent!,
 		/Reveal the question first/,
 	);
 	void f.press(question);
@@ -942,11 +942,11 @@ test("an automatic meme appears only after an answer, folded and dismissible", a
 		"an automatic meme takes no focus",
 	);
 	const fold = surface.container.querySelector(
-		".meme-plugin-fold",
+		".meme-fold",
 	) as HTMLElement;
 	assert.equal(fold.hidden, true, "collapsed by default");
 	assert.equal(
-		fold.querySelector(".meme-plugin-line")!.textContent,
+		fold.querySelector(".meme-line")!.textContent,
 		"auto",
 		"the meme is ready behind the fold",
 	);
@@ -1053,7 +1053,7 @@ test("#38 asked trigger: a pending question sends Hint/Think input only, never t
 	);
 	assert.equal(f.surfaces.length, 1);
 	const fold = f.surfaces[0]!.container.querySelector(
-		".meme-plugin-fold",
+		".meme-fold",
 	) as HTMLElement;
 	assert.equal(fold.hidden, true, "folded, as for every automatic meme");
 });

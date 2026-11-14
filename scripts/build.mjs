@@ -58,4 +58,4 @@ fs.copyFileSync(
 	path.join(root, "src/styles.css"),
 	path.join(output, "styles.css"),
 );
-console.log(`Built meme-plugin: ${output}`);
+console.log(`Built meme: ${output}`);

@@ -56,11 +56,11 @@ jobs:
         run: |
           plugins="$(mktemp -d)"
           node scripts/install-plugin-local.mjs "$plugins"
-          test -f "$plugins/meme-plugin/dist/manifest.json"
+          test -f "$plugins/meme/dist/manifest.json"
       - name: Upload build
         if: matrix.node == 22
         uses: actions/upload-artifact@v4
         with:
-          name: meme-plugin-dist
+          name: meme-dist
           path: dist/
           retention-days: 14

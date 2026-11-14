@@ -3,7 +3,7 @@ npm run build
 
 set -euo pipefail
 
-path="$HOME/Library/Application Support/LearnHarness/data/plugins/meme-plugin"
+path="$HOME/Library/Application Support/LearnHarness/data/plugins/meme"
 
 echo "deleting $path"
 rm -rf "$path"

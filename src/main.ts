@@ -78,23 +78,23 @@ function mountSurface(
 	view: PluginSessionViewContext,
 	preset?: Preset,
 ): () => void {
-	const root = element("div", "meme-plugin-surface");
-	const heading = element("h2", "meme-plugin-heading", "Meme");
+	const root = element("div", "meme-surface");
+	const heading = element("h2", "meme-heading", "Meme");
 	// The host focuses this marker when the surface opens. An automatic meme takes no focus.
 	if (!preset) {
 		heading.tabIndex = -1;
 		heading.setAttribute("data-plugin-initial-focus", "");
 	}
-	const conceptLine = element("p", "meme-plugin-concept");
+	const conceptLine = element("p", "meme-concept");
 	// Collapsible: the learner can fold the picture away and keep the fact.
-	const collapse = element("details", "meme-plugin-collapse");
+	const collapse = element("details", "meme-collapse");
 	collapse.open = true;
 	const collapseTitle = element("summary", "", "Meme image");
-	const body = element("div", "meme-plugin-body");
+	const body = element("div", "meme-body");
 	collapse.append(collapseTitle, body);
-	const fact = element("p", "meme-plugin-fact");
-	const credit = element("p", "meme-plugin-credit");
-	const actions = element("div", "meme-plugin-actions");
+	const fact = element("p", "meme-fact");
+	const credit = element("p", "meme-credit");
+	const actions = element("div", "meme-actions");
 	const anotherSlot = element("span", ""),
 		rejectSlot = element("span", ""),
 		copySlot = element("span", ""),
@@ -109,15 +109,15 @@ function mountSurface(
 		upSlot,
 		downSlot,
 	);
-	const notice = element("p", "meme-plugin-notice");
+	const notice = element("p", "meme-notice");
 	const content = [conceptLine, collapse, fact, credit, actions, notice];
 	if (preset) {
 		// Folded to one line until the learner expands it; Dismiss closes the surface.
-		const fold = element("div", "meme-plugin-fold");
+		const fold = element("div", "meme-fold");
 		fold.append(...content);
 		let folded: boolean = BUTTONLESS.collapsed;
 		fold.hidden = folded;
-		const bar = element("div", "meme-plugin-actions");
+		const bar = element("div", "meme-actions");
 		const toggleSlot = element("span", ""),
 			dismissSlot = element("span", "");
 		bar.append(toggleSlot, dismissSlot);
@@ -125,7 +125,7 @@ function mountSurface(
 			heading,
 			element(
 				"p",
-				"meme-plugin-concept",
+				"meme-concept",
 				"A meme for the question you just answered.",
 			),
 			bar,
@@ -177,7 +177,7 @@ function mountSurface(
 		body.append(
 			element(
 				"p",
-				failed ? "meme-plugin-status meme-plugin-error" : "meme-plugin-status",
+				failed ? "meme-status meme-error" : "meme-status",
 				text,
 			),
 		);
@@ -391,7 +391,7 @@ function mountSurface(
 		status(
 			"No question found on this page. Type the concept to turn into a meme.",
 		);
-		const slot = element("div", "meme-plugin-composer");
+		const slot = element("div", "meme-composer");
 		root.insertBefore(slot, fact);
 		let text = "";
 		const composer = ctx.ui.mountComposer(
@@ -653,8 +653,8 @@ function mountSettings(
 	signal: AbortSignal,
 	onState: (state: PluginState) => void,
 ): () => void {
-	const root = element("div", "meme-plugin-settings");
-	const loading = element("p", "meme-plugin-settings-note", "Loading…");
+	const root = element("div", "meme-settings");
+	const loading = element("p", "meme-settings-note", "Loading…");
 	root.append(loading);
 	container.append(root);
 
@@ -669,44 +669,44 @@ function mountSettings(
 		if (signal.aborted) return;
 		loading.remove();
 
-		const modelRow = element("div", "meme-plugin-settings-model");
+		const modelRow = element("div", "meme-settings-model");
 		const pickerSlot = element("span", ""),
 			defaultSlot = element("span", "");
 		modelRow.append(pickerSlot, defaultSlot);
 		// #36: the caption step only; null uses the Model above (or the cheap slot).
-		const captionRow = element("div", "meme-plugin-settings-model");
+		const captionRow = element("div", "meme-settings-model");
 		const captionPickerSlot = element("span", ""),
 			captionDefaultSlot = element("span", "");
 		captionRow.append(captionPickerSlot, captionDefaultSlot);
-		const searchRow = element("div", "meme-plugin-settings-model");
+		const searchRow = element("div", "meme-settings-model");
 		const searchSlot = element("span", "");
 		searchRow.append(searchSlot);
 		const rowsSlot = element("div", "");
-		const summary = element("p", "meme-plugin-settings-note");
-		const budget = element("p", "meme-plugin-settings-note");
+		const summary = element("p", "meme-settings-note");
+		const budget = element("p", "meme-settings-note");
 		const resetSlot = element("div", "");
 		const exportSlot = element("div", "");
-		const exported = element("p", "meme-plugin-settings-note");
-		const problems = element("ul", "meme-plugin-settings-problems");
+		const exported = element("p", "meme-settings-note");
+		const problems = element("ul", "meme-settings-problems");
 		root.append(
-			element("p", "meme-plugin-settings-label", "Model"),
+			element("p", "meme-settings-label", "Model"),
 			element(
 				"p",
-				"meme-plugin-settings-note",
+				"meme-settings-note",
 				"Writes the captions. Each meme costs one or two short requests. Default: the cheap model slot.",
 			),
 			modelRow,
-			element("p", "meme-plugin-settings-label", "Caption model"),
+			element("p", "meme-settings-label", "Caption model"),
 			element(
 				"p",
-				"meme-plugin-settings-note",
+				"meme-settings-note",
 				"Writes the caption text only. Default: the Model above, or the cheap slot. Picking the meme and checking the fact keep the Model above.",
 			),
 			captionRow,
-			element("p", "meme-plugin-settings-label", "Search agent"),
+			element("p", "meme-settings-label", "Search agent"),
 			element(
 				"p",
-				"meme-plugin-settings-note",
+				"meme-settings-note",
 				"Looks for existing memes when web search is on. Pick the model and provider you trust with your questions. Without one, no search runs.",
 			),
 			searchRow,
@@ -852,13 +852,13 @@ function mountTeacherMeme(
 	container: HTMLElement,
 	tool: PluginToolRenderProps,
 ): () => void {
-	const root = element("div", "meme-plugin-tool");
+	const root = element("div", "meme-tool");
 	container.append(root);
 	const note = (text: string, failed = false) =>
 		root.replaceChildren(
 			element(
 				"p",
-				failed ? "meme-plugin-status meme-plugin-error" : "meme-plugin-status",
+				failed ? "meme-status meme-error" : "meme-status",
 				text,
 			),
 		);
@@ -881,7 +881,7 @@ function mountTeacherMeme(
 		unmount?.();
 		root.replaceChildren();
 		unmount = mountMeme(root, result, image);
-		root.append(element("p", "meme-plugin-fact", result.fact));
+		root.append(element("p", "meme-fact", result.fact));
 	};
 	if (result.meme.hasImage) {
 		// A missing image is not a failure: the caption still shows as text.

@@ -81,9 +81,7 @@ export function mountMeme(
 		if (spec.angle) box.style.transform = `rotate(${-spec.angle}deg)`;
 		const text = element(
 			"div",
-			spec.color === "black"
-				? "meme-text meme-text-dark"
-				: "meme-text",
+			spec.color === "black" ? "meme-text meme-text-dark" : "meme-text",
 			styled(line, spec.style),
 		);
 		text.style.fontFamily = FONTS[spec.font];

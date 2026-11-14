@@ -472,9 +472,7 @@ test("failures are shown with a retry; an image failure falls back to text", asy
 	await (retry.props.onClick as () => Promise<void>)();
 	assert.equal(surface.querySelector(".meme-error"), null);
 	assert.deepEqual(
-		[...surface.querySelectorAll(".meme-line")].map(
-			(node) => node.textContent,
-		),
+		[...surface.querySelectorAll(".meme-line")].map((node) => node.textContent),
 		["first", "second"],
 	);
 	assert.equal(surface.querySelector("img"), null);
@@ -941,9 +939,7 @@ test("an automatic meme appears only after an answer, folded and dismissible", a
 		null,
 		"an automatic meme takes no focus",
 	);
-	const fold = surface.container.querySelector(
-		".meme-fold",
-	) as HTMLElement;
+	const fold = surface.container.querySelector(".meme-fold") as HTMLElement;
 	assert.equal(fold.hidden, true, "collapsed by default");
 	assert.equal(
 		fold.querySelector(".meme-line")!.textContent,

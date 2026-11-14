@@ -94,9 +94,7 @@ function fixture(
 		) => Reply | Promise<Reply>;
 	} = {},
 ) {
-	const dataDirectory = fs.mkdtempSync(
-		path.join(os.tmpdir(), "meme-test-"),
-	);
+	const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "meme-test-"));
 	t.after(() => fs.rmSync(dataDirectory, { recursive: true, force: true }));
 	if (options.memes !== null) {
 		fs.writeFileSync(

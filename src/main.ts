@@ -175,11 +175,7 @@ function mountSurface(
 	const status = (text: string, failed = false) => {
 		clear();
 		body.append(
-			element(
-				"p",
-				failed ? "meme-status meme-error" : "meme-status",
-				text,
-			),
+			element("p", failed ? "meme-status meme-error" : "meme-status", text),
 		);
 	};
 	const paintRating = () => {
@@ -856,11 +852,7 @@ function mountTeacherMeme(
 	container.append(root);
 	const note = (text: string, failed = false) =>
 		root.replaceChildren(
-			element(
-				"p",
-				failed ? "meme-status meme-error" : "meme-status",
-				text,
-			),
+			element("p", failed ? "meme-status meme-error" : "meme-status", text),
 		);
 	if (tool.state === "output-error") {
 		note(tool.errorText || "The meme could not be made.", true);

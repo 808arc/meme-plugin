@@ -7,19 +7,13 @@
  * fails to parse is recorded as an error, so the eval measures first-try reliability. */
 import { FACT_CHECK } from "../../src/config.ts";
 import { agreementRequest, parseAgreement } from "../../src/factcheck.ts";
+import { parseCaption } from "../../src/caption.ts";
 import {
-	PROMPT_VERSION,
+	captionRequest,
 	extractJson,
-	fillRequest,
 	type ModelRequest,
-	templateRequest,
+	PROMPT_VERSION,
 } from "../../src/prompts.ts";
-import {
-	assemble,
-	MAX_SLOTS,
-	parseFilling,
-	parseTemplate,
-} from "../../src/template.ts";
 import type { Concept, Meme } from "../../src/types.ts";
 import type { EvalConcept } from "./concepts.ts";
 
@@ -38,12 +32,15 @@ export type Verdict = Record<Dimension, Score>;
 const clip = (text: string, limit: number) =>
 	text.length > limit ? `${text.slice(0, limit - 1).trimEnd()}…` : text;
 
-/** Only memes the plugin's templating can handle: non-empty captions within the slot budget. */
+/** At most this many text boxes: longer debates (six panels) are a different test. */
+export const MAX_EVAL_BOXES = 6;
+
+/** Only memes the plugin can caption: a non-empty caption within the box budget. */
 export function eligibleMemes(memes: readonly Meme[]): Meme[] {
 	return memes.filter(
 		(meme) =>
 			meme.caption.some((line) => line.trim() !== "") &&
-			meme.caption.filter((line) => line.trim() !== "").length <= MAX_SLOTS,
+			meme.caption.length <= MAX_EVAL_BOXES,
 	);
 }
 
@@ -111,8 +108,6 @@ export function parseVerdict(raw: unknown): Verdict {
 }
 
 export interface MadeMeme {
-	templateLines: string[];
-	values: Record<string, string>;
 	fact: string;
 	lines: string[];
 }
@@ -137,17 +132,14 @@ export async function ask<T>(
 	}
 }
 
-/** Steps 3 to 5 of the plugin in Answer mode, without the cache and the emphasis:
- * template, fill with the answer key, then the fact check (#7). A fact that does not
- * agree is refilled, up to the backend's attempt limit, and then the meme is an error. */
+/** The caption step of the plugin in Answer mode: one tight line per box with the
+ * answer key, then the fact check (#7). A fact that does not agree is rewritten, up to
+ * the backend's attempt limit, and then the meme is an error. */
 export async function makeMeme(
 	concept: EvalConcept,
 	meme: Meme,
 	generate: Complete,
 ): Promise<MadeMeme> {
-	const template = await ask(generate, templateRequest(meme), (raw) =>
-		parseTemplate(raw, meme.caption),
-	);
 	const asked: Concept = {
 		prompt: concept.prompt,
 		...(concept.context ? { context: concept.context } : {}),
@@ -155,26 +147,20 @@ export async function makeMeme(
 	};
 	let avoid: string | undefined;
 	for (let attempt = 1; ; attempt++) {
-		const filling = await ask(
+		const caption = await ask(
 			generate,
-			fillRequest({ meme, template, concept: asked, emphasis: false, avoid }),
-			(raw) => parseFilling(raw, template),
+			captionRequest({ meme, concept: asked, avoid }),
+			(raw) => parseCaption(raw, meme.caption.length),
 		);
 		const agrees = await ask(
 			generate,
-			agreementRequest({ concept: asked, fact: filling.fact }),
+			agreementRequest({ concept: asked, fact: caption.fact }),
 			parseAgreement,
 		);
-		if (agrees)
-			return {
-				templateLines: template.lines,
-				values: filling.values,
-				fact: filling.fact,
-				lines: assemble(template, filling.values, null),
-			};
+		if (agrees) return caption;
 		if (attempt >= FACT_CHECK.MAX_FACT_ATTEMPTS)
 			throw new Error(FACT_CHECK.UNRELIABLE_MESSAGE);
-		avoid = filling.fact;
+		avoid = caption.fact;
 	}
 }
 

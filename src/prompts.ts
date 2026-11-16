@@ -1,15 +1,13 @@
-/** Model-facing wording for steps 3 to 5 of the README. Product text: edit freely.
- * Bump PROMPT_VERSION when the template instructions change so cached templates rebuild. */
-import {
-	MAX_EMPHASIS_LENGTH,
-	MAX_SLOTS,
-	MAX_VALUE_LENGTH,
-	sentences,
-} from "./template.ts";
+/** Model-facing wording for the pick and caption steps of the README. Product text:
+ * edit freely. The process follows the Vellum meme-generator skill (MIT,
+ * github.com/vellum-ai/vellum-assistant, skills/meme-generator): start with the take,
+ * pick the template whose joke structure fits, write tight copy, one line per box.
+ * Bump PROMPT_VERSION when the caption instructions change; eval reports record it. */
+import { MAX_LINE_LENGTH, MAX_LINE_WORDS } from "./caption.ts";
 import type { Tone } from "./config.ts";
-import type { Concept, Meme, Template } from "./types.ts";
+import type { Concept, Meme } from "./types.ts";
 
-export const PROMPT_VERSION = 4;
+export const PROMPT_VERSION = 5;
 
 export interface ModelRequest {
 	systemPrompt: string;
@@ -19,45 +17,95 @@ export interface ModelRequest {
 export const numbered = (lines: readonly string[]) =>
 	lines.map((line, index) => `${index + 1}. ${line || "(empty)"}`).join("\n");
 
-/** Step 2: choose, from candidate memes, the one whose joke structure fits the concept. */
+/** What each popular template is best for, from the skill's table (memegen ids). */
+export const BEST_FOR: Readonly<Record<string, string>> = {
+	drake: '"This not that" comparisons',
+	db: "Three-way tension: the tempting new thing, the one distracted, the one neglected",
+	fine: "Denial of obvious problems",
+	cmm: "Hot takes, controversial opinions",
+	astronaut: '"Wait, it was X?" / "Always has been"',
+	pigeon: "Misidentifying something obvious",
+	exit: "Choosing the wrong or chaotic option",
+	gru: "A plan that backfires in step 3 or 4",
+	pooh: "Basic versus sophisticated version",
+	rollsafe: 'Galaxy-brain "logic"',
+	chair: "Multi-panel heated debate",
+	ds: "Two-button dilemma",
+	same: "Two things that are identical",
+	midwit: "Beginner and expert agree, the midwit overthinks",
+	gb: 'Escalating "big brain" ideas',
+	right: '"Right...?": dawning realization',
+	harold: "Suffering in silence",
+	vince: "Escalating excitement",
+	home: "Wanting X, getting budget X",
+	"panik-kalm-panik": "Emotional rollercoaster",
+	"woman-cat": "Accusation versus unbothered response",
+	spiderman: "Two identical things",
+};
+
+/** The skill's mapping from joke structure to template. */
+const STRUCTURES = [
+	"Comparison or preference: Drake, Pooh",
+	"Hot take: Change My Mind",
+	"Misidentification: Pigeon",
+	"Denial: This is Fine",
+	"Realization: Always Has Been, Anakin and Padme",
+	"Escalation: Galaxy Brain, Vince McMahon",
+	"Dilemma: Daily Struggle, Left Exit",
+];
+
+const bestFor = (meme: Pick<Meme, "id">) =>
+	meme.id?.startsWith("memegen:")
+		? BEST_FOR[meme.id.slice("memegen:".length)]
+		: undefined;
+
+/** Step 2: choose, from candidate memes, the one whose joke structure fits the take. */
 export function pickRequest(
 	concept: Concept,
-	candidates: readonly Pick<Meme, "name" | "caption">[],
+	candidates: readonly (Pick<Meme, "name" | "caption"> &
+		Partial<Pick<Meme, "id">>)[],
 ): ModelRequest {
 	return {
 		systemPrompt: [
-			'You choose which meme to use for a study question. Pick the meme whose joke structure fits the concept: a comparison, an escalation, a betrayal, a "nobody: / me:" contrast, and so on.',
-			"Judge each meme by its original caption, which shows the shape of its joke.",
+			"You choose which meme to use for a study question. Start with the take: the one fact or contrast the learner should remember. Then pick the meme whose joke structure fits that take.",
+			`Match the joke structure to the meme format:\n${STRUCTURES.map((line) => `- ${line}`).join("\n")}`,
+			'Judge each meme by its original caption, which shows the shape of its joke, and by its "best for" note when it has one.',
 			'Reply with one JSON object and nothing else: {"choice": number}, where the number is the meme\'s number in the list.',
 		].join("\n"),
 		user: [
 			`The learner is being asked:\n${concept.prompt}`,
 			concept.context ? `Shown with the question:\n${concept.context}` : "",
-			`Memes:\n${numbered(candidates.map((meme) => `${meme.name}: ${meme.caption.join(" / ")}`))}`,
+			`Memes:\n${numbered(
+				candidates.map((meme) => {
+					const note = meme.id ? bestFor(meme as Pick<Meme, "id">) : undefined;
+					return `${meme.name}: ${meme.caption.join(" / ")}${note ? ` (best for: ${note})` : ""}`;
+				}),
+			)}`,
 		]
 			.filter(Boolean)
 			.join("\n\n"),
 	};
 }
 
-/** Step 3: reduce a caption to fixed memetic phrasing plus fillable slots. */
-export function templateRequest(
-	meme: Pick<Meme, "name" | "caption">,
-): ModelRequest {
-	return {
-		systemPrompt: [
-			"You turn the caption of an image meme into a reusable template.",
-			"Keep the wording that makes the meme recognizable exactly as written. Replace only the parts that are about the caption's particular topic with placeholders written {slot_name}.",
-			"Rules:",
-			`- Return the same number of lines, in the same order. An empty line stays empty.`,
-			`- Use 1 to ${MAX_SLOTS} slots. Slot names are lowercase snake_case and say what belongs there (achievement, descriptor, name).`,
-			"- For every slot give the exact original words it replaces. Putting those words back must reproduce the caption word for word.",
-			"- When a whole line is topic-specific, that line may be a single slot.",
-			"- Describe in a few words how the meme's character talks.",
-			'Reply with one JSON object and nothing else: {"lines": string[], "slots": [{"name": string, "hint": string, "original": string}], "voice": string}',
-		].join("\n"),
-		user: `Meme: ${meme.name}\nCaption lines:\n${numbered(meme.caption)}`,
-	};
+/** The meme block shared by every caption prompt: its boxes in order, with the
+ * original text of each, so the model sees which box is which. */
+export function memeBlock(
+	meme: Pick<Meme, "name" | "caption"> & Partial<Pick<Meme, "id">>,
+): string {
+	const note = meme.id ? bestFor(meme as Pick<Meme, "id">) : undefined;
+	return [
+		`Meme: ${meme.name}${note ? `\nBest for: ${note}` : ""}`,
+		`Text boxes, in order, with the original meme's text:\n${numbered(meme.caption)}`,
+	].join("\n");
+}
+
+/** The copy rules every caption prompt shares (the skill's "write tight copy"). */
+export function copyRules(boxes: number): string[] {
+	return [
+		`- Write exactly ${boxes} ${boxes === 1 ? "line" : "lines"}, one per text box, in the boxes' order. Each line goes where the original line was and plays the same role in the joke.`,
+		`- Tight copy: at most ${MAX_LINE_WORDS} words and ${MAX_LINE_LENGTH} characters per line; 3 to 8 words is best. If you need a sentence, the joke is not tight enough.`,
+		'- A box the original leaves empty may stay empty (""). Plain text only, no emoji.',
+	];
 }
 
 /** #36: one instruction line per tone, with style-only examples (no real facts). */
@@ -121,38 +169,30 @@ export function toneRule(tone: Tone): string[] {
 	];
 }
 
-/** Steps 4 and 5: fill the slots with facts about the concept, optionally add emphasis. */
-export function fillRequest(input: {
-	meme: Pick<Meme, "name">;
-	template: Template;
+/** Step 3: write the meme's lines about the concept, stating the correct answer. */
+export function captionRequest(input: {
+	meme: Pick<Meme, "name" | "caption"> & Partial<Pick<Meme, "id">>;
 	concept: Concept;
-	emphasis: boolean;
 	/** #36: comic tone; omitted or "none" leaves the prompt as before. */
 	tone?: Tone;
 	/** A fact from an earlier attempt that did not agree with the question. */
 	avoid?: string;
 }): ModelRequest {
-	const { template } = input;
 	const answer = input.concept.answer
 		? `The correct answer is: ${input.concept.answer.correct.join(" | ")}. The fact must say so.`
 		: "";
-	const emphasis = input.emphasis
-		? `- You may add one short interjection (at most ${MAX_EMPHASIS_LENGTH} characters) in the character's voice that repeats the key term for emphasis, placed after one of the numbered sentences. Use null when it would not sound right.`
-		: '- Set "emphasis" to null.';
 	return {
 		systemPrompt: [
-			"You write the caption of a study meme. A learner is being asked about a concept; the meme must state the correct answer so that it sticks.",
-			"You are given a meme template with slots. Fill every slot.",
+			"You write the text of a study meme. A learner is being asked about a concept; the meme must state the correct answer so that it sticks.",
+			"Start with the take: the single most important fact. Then write the meme's lines so the meme's joke structure carries that fact.",
 			"Rules:",
-			"- The filled caption must state true facts that answer the learner's question. Never invent names, dates or numbers. Prefer the single most important fact.",
-			"- Make it funny with exaggeration and absurdity, not puns or wordplay: push the true fact to a vivid, absurd extreme the meme's character would relish. Use one surprise per caption, and put the punchline in the last numbered sentence.",
+			"- The lines must state true facts that answer the learner's question. Never invent names, dates or numbers.",
+			"- Make it funny with exaggeration and absurdity, not puns or wordplay: push the true fact to a vivid, absurd extreme. Use one surprise, and put the punchline in the last line that has text.",
 			"- A joke must never need a claim that is false or unsupported by the fact; when it would, state the plain fact instead.",
 			...toneRule(input.tone ?? "none"),
-			`- Each value is a short phrase (at most ${MAX_VALUE_LENGTH} characters) that reads grammatically inside its sentence. Plain text only.`,
-			"- Do not rewrite the fixed words of the template; you only supply slot values.",
-			emphasis,
+			...copyRules(input.meme.caption.length),
 			'- "fact" is the same fact as one plain sentence, without the meme.',
-			'Reply with one JSON object and nothing else: {"values": {slot_name: string}, "emphasis": {"after": number, "text": string} | null, "fact": string}',
+			'Reply with one JSON object and nothing else: {"lines": string[], "fact": string}',
 		].join("\n"),
 		user: [
 			`The learner is being asked:\n${input.concept.prompt}`,
@@ -163,9 +203,7 @@ export function fillRequest(input: {
 			input.avoid
 				? `An earlier attempt wrote this fact, which does not agree with the question: "${input.avoid}". Write a fact that does.`
 				: "",
-			`Meme: ${input.meme.name}${template.voice ? `\nCharacter voice: ${template.voice}` : ""}`,
-			`Template sentences:\n${numbered(sentences(template).map((sentence) => sentence.text))}`,
-			`Slots:\n${template.slots.map((slot) => `- ${slot.name}: ${slot.hint} (the original meme said "${slot.original}")`).join("\n")}`,
+			memeBlock(input.meme),
 		]
 			.filter(Boolean)
 			.join("\n\n"),

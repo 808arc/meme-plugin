@@ -27,10 +27,7 @@ const generated = (id: string, lines: string[]): GeneratedMeme => ({
 	},
 	concept: { prompt: "Who backed CUDA?" },
 	originalCaption: lines,
-	templateLines: lines,
 	lines,
-	values: {},
-	emphasis: null,
 	fact: "Jensen Huang backed CUDA.",
 });
 const state: PluginState = {
@@ -38,7 +35,6 @@ const state: PluginState = {
 	settings: {
 		model: null,
 		captionModel: null,
-		emphasis: true,
 		cooldownDays: 14,
 		cooldownGrowth: 2,
 		useMemegen: true,
@@ -299,6 +295,56 @@ const question = {
 	question: { question: "Who backed CUDA?", options: [] },
 };
 
+test("a meme the image server rendered is shown as is, with its lines in the alt text", async (t) => {
+	const f = fixture(t, (operation) =>
+		operation === "generate"
+			? generated("memegen:drake", ["CPU-only math", "CUDA"])
+			: { mimeType: "image/png", data: "AAAA", rendered: true },
+	);
+	void f.press(question);
+	await settle();
+	const surface = f.surfaces[0]!;
+	const image = surface.container.querySelector(
+		"img.meme-plugin-image",
+	) as HTMLImageElement;
+	assert.equal(image.getAttribute("src"), "data:image/png;base64,AAAA");
+	assert.equal(image.alt, "Name of memegen:drake meme: CPU-only math / CUDA");
+	assert.equal(
+		surface.container.querySelectorAll(".meme-plugin-box").length,
+		0,
+		"the server drew the text: no boxes on top",
+	);
+});
+
+test("closing the window while a meme is being made cancels that request", async (t) => {
+	let pendingGenerate!: (value: unknown) => void;
+	const f = fixture(t, (operation) =>
+		operation === "generate"
+			? new Promise((resolve) => {
+					pendingGenerate = resolve;
+				})
+			: null,
+	);
+	void f.press(question);
+	await settle();
+	f.surfaces[0]!.signal.abort();
+	await settle();
+	// The fixture records request ids apart: generate's, then cancel's, are the same.
+	assert.deepEqual(
+		f.calls.map((call) => call.operation),
+		["generate", "cancel"],
+	);
+	assert.equal(f.requestIds.length, 2);
+	assert.equal(f.requestIds[1], f.requestIds[0]);
+	pendingGenerate(generated("custom:a", ["late"]));
+	await settle();
+	assert.deepEqual(
+		f.calls.map((call) => call.operation),
+		["generate", "cancel"],
+		"no image is fetched for a closed window, and no second cancel",
+	);
+});
+
 test("the action is registered for sessions, placed explicitly and opts into shortcuts", (t) => {
 	const f = fixture(t, () => null);
 	const action = f.actions.get("meme-this")!;
@@ -339,7 +385,10 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 
 	assert.deepEqual(f.calls, [
 		{ operation: "generate", input: { prompt: "Who backed CUDA?" } },
-		{ operation: "get-image", input: { id: "custom:a" } },
+		{
+			operation: "get-image",
+			input: { id: "custom:a", lines: ["he backed cuda", hostile] },
+		},
 	]);
 	const image = surface.container.querySelector(
 		"img.meme-plugin-image",
@@ -449,7 +498,11 @@ test("results that arrive after the surface closed are dropped", async (t) => {
 	finish(generated("custom:late", ["late"]));
 	await settle();
 	assert.equal(f.surfaces[0]!.container.textContent, "");
-	assert.equal(f.calls.length, 1, "no image is requested for a dropped meme");
+	assert.deepEqual(
+		f.calls.map((call) => call.operation),
+		["generate", "cancel"],
+		"closing cancels the request; no image is requested for a dropped meme",
+	);
 });
 
 test("failures are shown with a retry; an image failure falls back to text", async (t) => {
@@ -552,7 +605,6 @@ test("settings publish only what the backend accepted", async (t) => {
 		[
 			["mode", "dropdown", "answer"],
 			["tone", "dropdown", "none"],
-			["emphasis", "toggle", true],
 			["cooldownDays", "number", 14],
 			["cooldownGrowth", "number", 2],
 			["rejectCooldownDays", "number", 1],
@@ -1081,6 +1133,36 @@ test("#38 asked trigger: one automatic meme per question, and never once reveale
 	assert.equal(sent.length, 1);
 });
 
+test("automatic Shuffle watches both moments: the asked check, then the reveal of the same question", async (t) => {
+	const sent: { key: string; asked?: boolean }[] = [];
+	const base = automaticBackend("shuffle", sent);
+	// The backend says this question's trigger is the reveal: the asked check gets "off".
+	const f = fixture(t, (operation, input) =>
+		operation === "auto-meme" && (input as { asked?: boolean }).asked
+			? (sent.push(input as { key: string }), { status: "off" })
+			: base(operation, input),
+	);
+	f.render({});
+	await settle();
+	f.render({ input: pending });
+	f.render({ input: pending });
+	await settle();
+	f.render({
+		input: { ...pending, revealed: true },
+		messages: [answered("q1")],
+	});
+	await settle();
+	assert.deepEqual(
+		sent.map((entry) => [entry.key, entry.asked === true]),
+		[
+			["s:q1", true],
+			["s:q1", false],
+		],
+		"one asked check and one reveal check for the same question",
+	);
+	assert.equal(f.surfaces.length, 1, "the reveal meme opens");
+});
+
 test("#38 asked trigger: only the setting's own trigger, and only on a pending question", async (t) => {
 	const sent: unknown[] = [];
 	const reveal = fixture(t, automaticBackend("every", sent));
@@ -1113,6 +1195,27 @@ test("#38 settings: Automatic memes lists the reveal and asked triggers, off by 
 	assert.equal(row.value, "off");
 	assert.deepEqual(
 		row.type === "dropdown" ? row.options.map((option) => option.value) : [],
-		["off", "every", "nth", "wrong", "asked", "asked-nth"],
+		["off", "every", "nth", "wrong", "asked", "asked-nth", "shuffle"],
 	);
+	const options = (key: string) => {
+		const found = rows.find((entry) => entry.key === key)!;
+		return found.type === "dropdown"
+			? found.options.map((option) => option.value)
+			: [];
+	};
+	assert.deepEqual(options("teacherMemes"), [
+		"off",
+		"teacher",
+		"wrong",
+		"shuffle",
+	]);
+	assert.deepEqual(options("tone"), [
+		"none",
+		"deadpan",
+		"absurd",
+		"sarcastic",
+		"self-deprecating",
+		"playful",
+		"shuffle",
+	]);
 });

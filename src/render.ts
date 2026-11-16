@@ -1,5 +1,6 @@
-/** Draws a generated meme with plain DOM: the blank image with caption boxes laid
- * over it. All model text is inserted with textContent, never as markup. */
+/** Draws a generated meme with plain DOM: the image the server rendered with its
+ * caption, or else the blank image with caption boxes laid over it. All model text is
+ * inserted with textContent or properties, never as markup. */
 import type { Box, GeneratedMeme, MemeImage } from "./types.ts";
 
 const FONTS: Record<Box["font"], string> = {
@@ -58,17 +59,26 @@ export function mountMeme(
 	figure.append(stage);
 	container.append(figure);
 	const cleanup: (() => void)[] = [() => figure.remove()];
+	const unmount = () => {
+		for (const run of cleanup) run();
+	};
 
 	if (!image) {
 		for (const line of result.lines)
 			if (line) stage.append(element("p", "meme-plugin-line", line));
-		return () => cleanup.forEach((run) => run());
+		return unmount;
 	}
 
 	const picture = element("img", "meme-plugin-image");
-	picture.alt = `${result.meme.name} meme`;
 	picture.src = `data:${image.mimeType};base64,${image.data}`;
 	stage.append(picture);
+	// The image server already drew the caption (Vellum skill): no boxes on top. The
+	// text is still in the alt text for screen readers.
+	if (image.rendered) {
+		picture.alt = `${result.meme.name} meme: ${result.lines.filter(Boolean).join(" / ")}`;
+		return unmount;
+	}
+	picture.alt = `${result.meme.name} meme`;
 	const boxes: { box: HTMLElement; text: HTMLElement; angled: boolean }[] = [];
 	result.lines.forEach((line, index) => {
 		const spec = result.meme.boxes[index];
@@ -107,15 +117,24 @@ export function mountMeme(
 		cleanup.push(() => observer.disconnect());
 	}
 	if (picture.complete) layout();
-	return () => cleanup.forEach((run) => run());
+	return unmount;
 }
 
-/** Composites the blank image and the caption lines into one PNG, for "Copy image".
- * Mirrors the on-screen boxes; the caption is drawn, never read from the DOM. */
+/** One PNG for "Copy image": a server-rendered meme as is; otherwise the blank image
+ * and the caption lines composited, mirroring the on-screen boxes. The caption is
+ * drawn, never read from the DOM. */
 export async function memePng(
 	result: GeneratedMeme,
 	image: MemeImage,
 ): Promise<Blob> {
+	// Already a finished meme from the image server: copy its bytes as they are.
+	if (image.rendered && image.mimeType === "image/png")
+		return new Blob(
+			[Uint8Array.from(atob(image.data), (c) => c.charCodeAt(0))],
+			{
+				type: "image/png",
+			},
+		);
 	const picture = new Image();
 	picture.src = `data:${image.mimeType};base64,${image.data}`;
 	await picture.decode();

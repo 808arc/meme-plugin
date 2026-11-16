@@ -1,7 +1,7 @@
 /** Fact check: a generated fact must agree with the question before its meme is shown.
  * The shortcut and the reply parser are pure; the model is only asked when the shortcut is silent. */
 import type { ModelRequest } from "./prompts.ts";
-import { normalize } from "./template.ts";
+import { normalize } from "./caption.ts";
 import type { Concept, ConceptAnswer } from "./types.ts";
 
 const MAX_LABEL_LENGTH = 200;

@@ -26,7 +26,7 @@ import {
 	STAGE_TOPIC,
 	STAGES,
 	TEACHER_TOOL,
-	TONES,
+	TONE_SETTINGS,
 } from "./config.ts";
 import { element, memePng, mountMeme } from "./render.ts";
 import {
@@ -231,6 +231,12 @@ function mountSurface(
 		// The backend reports each step as it starts; only this request's events count.
 		const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 		let done = false;
+		// Closing the window stops this request in the backend, so it costs nothing more
+		// and the next meme does not have to wait for it.
+		const cancel = () => {
+			if (!done) void ctx.call("cancel", { requestId }).catch(() => {});
+		};
+		signal.addEventListener("abort", cancel, { once: true });
 		const stopStages = ctx.onNotification((event) => {
 			if (done || stale() || event.topic !== STAGE_TOPIC) return;
 			const data = event.data as { requestId?: unknown; stage?: unknown };
@@ -261,6 +267,7 @@ function mountSurface(
 				try {
 					picture = await ctx.call<MemeImage | null>("get-image", {
 						id: next.meme.id,
+						lines: next.lines,
 					});
 				} catch {
 					picture = null;
@@ -282,6 +289,7 @@ function mountSurface(
 		} finally {
 			done = true;
 			stopStages();
+			signal.removeEventListener("abort", cancel);
 		}
 	};
 
@@ -480,22 +488,13 @@ function settingsRows(
 			key: "tone",
 			label: "Tone",
 			description:
-				"Gives the caption a comic tone: deadpan, absurd, sarcastic, self-deprecating or playful. The facts and the accuracy rules stay the same.",
+				"Gives the caption a comic tone: deadpan, absurd, sarcastic, self-deprecating or playful. Shuffle picks one at random for each meme. The facts and the accuracy rules stay the same.",
 			value: settings.tone,
-			options: TONES.map((value) => ({
+			options: TONE_SETTINGS.map((value) => ({
 				value,
 				label: value[0]!.toUpperCase() + value.slice(1),
 			})),
 			onChange: (tone) => save({ tone: tone as Settings["tone"] }),
-		},
-		{
-			type: "toggle",
-			key: "emphasis",
-			label: "Add emphasis",
-			description:
-				"Let the meme's character repeat the key term in its own voice.",
-			value: settings.emphasis,
-			onChange: (emphasis) => save({ emphasis }),
 		},
 		{
 			type: "number",
@@ -579,6 +578,10 @@ function settingsRows(
 				{ value: "off", label: "Off" },
 				{ value: "teacher", label: "Teacher decides" },
 				{ value: "wrong", label: "After wrong answers" },
+				{
+					value: "shuffle",
+					label: "Shuffle: teacher decides or after wrong answers, per turn",
+				},
 			],
 			onChange: (value) =>
 				save({ teacherMemes: value as Settings["teacherMemes"] }),
@@ -608,6 +611,10 @@ function settingsRows(
 					value: "asked-nth",
 					label: `When a question is asked: every ${ordinal(CHAT_MEMES.askedNth)} question`,
 				},
+				{
+					value: "shuffle",
+					label: "Shuffle: one of the above, per question",
+				},
 			],
 			onChange: (value) =>
 				save({ automaticMemes: value as Settings["automaticMemes"] }),
@@ -617,7 +624,7 @@ function settingsRows(
 			key: "imageBaseUrl",
 			label: "Image server",
 			description:
-				"Blank meme images are downloaded from here once, then cached. Only the meme's id is sent, never your question. Leave empty to show captions without images.",
+				"This server draws the caption onto catalogue memes, so the meme's id and its caption lines are sent here (never your question). Point it at a self-hosted memegen to keep captions on your machine. Your own memes are not sent. Leave empty to show captions without images.",
 			value: settings.imageBaseUrl,
 			validate: (value) =>
 				imageBaseUrlProblem(value.trim().replace(/\/+$/, "")),
@@ -886,7 +893,10 @@ function mountTeacherMeme(
 	if (result.meme.hasImage) {
 		// A missing image is not a failure: the caption still shows as text.
 		ctx
-			.call<MemeImage | null>("get-image", { id: result.meme.id })
+			.call<MemeImage | null>("get-image", {
+				id: result.meme.id,
+				lines: result.lines,
+			})
 			.then(show, () => show(null));
 	} else show(null);
 	return () => {
@@ -978,6 +988,7 @@ export function activate(ctx: PluginFrontendContext): void {
 			try {
 				image = await ctx.call<MemeImage | null>("get-image", {
 					id: result.meme.meme.id,
+					lines: result.meme.lines,
 				});
 			} catch {
 				image = null;
@@ -1001,29 +1012,36 @@ export function activate(ctx: PluginFrontendContext): void {
 		const view = context.view;
 		const target = context.surfaceTarget;
 		// #38: when a question is asked. Hint or Think only, from the pre-reveal read.
-		if (automatic === "asked" || automatic === "asked-nth") {
+		// Shuffle watches both moments; the backend decides per question which one counts.
+		const askedOnly = automatic === "asked" || automatic === "asked-nth";
+		if (askedOnly || automatic === "shuffle") {
 			const pending = pendingQuestion(view);
-			if (!pending || handled.has(pending.key)) return;
-			handled.add(pending.key);
-			if (open) return;
-			const { prompt, context: extra } = pending.early.concept;
-			queueMicrotask(
-				() =>
-					void deliver(
-						target,
-						{
-							key: pending.key,
-							asked: true,
-							prompt,
-							...(extra !== undefined ? { context: extra } : {}),
-							...(pending.early.options.length
-								? { options: pending.early.options }
-								: {}),
-						},
-						view,
-					),
-			);
-			return;
+			if (!pending) {
+				if (askedOnly) return;
+			} else {
+				// Its own handled key: the same question may still be sent after its reveal.
+				if (handled.has(`asked:${pending.key}`)) return;
+				handled.add(`asked:${pending.key}`);
+				if (open) return;
+				const { prompt, context: extra } = pending.early.concept;
+				queueMicrotask(
+					() =>
+						void deliver(
+							target,
+							{
+								key: pending.key,
+								asked: true,
+								prompt,
+								...(extra !== undefined ? { context: extra } : {}),
+								...(pending.early.options.length
+									? { options: pending.early.options }
+									: {}),
+							},
+							view,
+						),
+				);
+				return;
+			}
 		}
 		// Same reveal rule as Meme this: nothing while an unrevealed question is on screen.
 		if (conceptFromView(view).status === "hidden") return;

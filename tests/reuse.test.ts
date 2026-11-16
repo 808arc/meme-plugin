@@ -24,10 +24,7 @@ import {
 const meme = (id: string): StoredMeme => ({
 	meme: { id, origin: "custom", name: id, boxes: [], hasImage: false },
 	originalCaption: [],
-	templateLines: [],
 	lines: [id],
-	values: {},
-	emphasis: null,
 	fact: "",
 });
 const entry = (

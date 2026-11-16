@@ -17,7 +17,6 @@ import {
 	readOptions,
 	thinkFillRequest,
 } from "../src/modes.ts";
-import type { Template } from "../src/types.ts";
 
 const SECRET = "SECRET-ANSWER-KEY";
 function view(input: unknown): PluginSessionViewContext {
@@ -126,21 +125,14 @@ test("the no-answer check matches whole words, ignoring case, accents and punctu
 	assert.equal(givesAnswerAway(["anything"], ["", "?!"]), false);
 });
 
-const template: Template = {
-	lines: ["{rejected}", "{preferred}"],
-	slots: [
-		{ name: "rejected", hint: "worse", original: "manual backups" },
-		{ name: "preferred", hint: "better", original: "automatic backups" },
-	],
-	voice: "",
-};
+/** Two boxes, as the "Two panel" meme has. */
+const BOXES = 2;
 const reply = (
 	values: Record<string, string>,
 	fact: string,
 	answer?: string,
 ) => ({
-	values,
-	emphasis: { after: 1, text: "CUDA!!" },
+	lines: [values.rejected, values.preferred],
 	fact,
 	...(answer === undefined ? {} : { answer }),
 });
@@ -152,36 +144,32 @@ test("a Hint or Think reply is rejected when it names the answer or any option",
 			"Think of who runs the company that sells GeForce.",
 			"Jensen Huang",
 		),
-		template,
+		BOXES,
 		["Jensen Huang", "Lisa Su"],
 	);
 	assert.deepEqual(ok, {
-		values: {
-			rejected: "a chip rival's boss",
-			preferred: "a GPU maker's boss",
-		},
-		emphasis: null,
+		lines: ["a chip rival's boss", "a GPU maker's boss"],
 		fact: "Think of who runs the company that sells GeForce.",
 	});
 	assert.ok(!("answer" in ok), "the model's answer is dropped");
 
 	const leak = (values: Record<string, string>, fact: string) => () =>
-		parseModeFilling(reply(values, fact, "Jensen Huang"), template, [
+		parseModeFilling(reply(values, fact, "Jensen Huang"), BOXES, [
 			"Jensen Huang",
 			"Lisa Su",
 		]);
 	assert.throws(
 		leak({ rejected: "x", preferred: "jensen huang" }, "Hint."),
-		/gives the answer away/,
+		/give the answer away/,
 	);
 	assert.throws(
 		leak({ rejected: "Lisa Su", preferred: "y" }, "Hint."),
-		/gives the answer away/,
+		/give the answer away/,
 		"wrong options too",
 	);
 	assert.throws(
 		leak({ rejected: "x", preferred: "y" }, "It is Jensen Huang."),
-		/gives the answer away/,
+		/give the answer away/,
 		"the note counts",
 	);
 	// Without options, the model's own answer is still checked.
@@ -189,16 +177,16 @@ test("a Hint or Think reply is rejected when it names the answer or any option",
 		() =>
 			parseModeFilling(
 				reply({ rejected: "x", preferred: "Huang" }, "Hint.", "Huang"),
-				template,
+				BOXES,
 				[],
 			),
-		/gives the answer away/,
+		/give the answer away/,
 	);
 	assert.throws(
 		() =>
 			parseModeFilling(
 				reply({ rejected: "x", preferred: "y" }, "Hint."),
-				template,
+				BOXES,
 				[],
 			),
 		/"answer" is missing/,
@@ -207,7 +195,7 @@ test("a Hint or Think reply is rejected when it names the answer or any option",
 		() =>
 			parseModeFilling(
 				reply({ rejected: "x", preferred: "y" }, "Hint.", "z".repeat(81)),
-				template,
+				BOXES,
 				[],
 			),
 		/"answer" is longer/,
@@ -231,8 +219,10 @@ test("option input is refused when malformed, never clipped", () => {
 
 test("Hint and Think prompts forbid the answer and say when the question is unseen", () => {
 	const input = {
-		meme: { name: "Two panel" },
-		template,
+		meme: {
+			name: "Two panel",
+			caption: ["manual backups", "automatic backups"],
+		},
 		concept: { prompt: "Who backed CUDA?", context: "GPU history" },
 		early: true,
 	};
@@ -246,7 +236,11 @@ test("Hint and Think prompts forbid the answer and say when the question is unse
 			request.systemPrompt,
 			/Never write the text of any answer option/,
 		);
-		assert.match(request.systemPrompt, /Set "emphasis" to null/);
+		assert.match(
+			request.systemPrompt,
+			/Write exactly 2 lines, one per text box/,
+		);
+		assert.match(request.systemPrompt, /"lines": string\[\]/);
 		assert.match(request.systemPrompt, /"answer": string/);
 		assert.match(
 			request.user,

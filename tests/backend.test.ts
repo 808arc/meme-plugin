@@ -17,8 +17,8 @@ import {
 } from "../src/config.ts";
 import { defaultBoxes, loadCustomMemes, memegenMemes } from "../src/library.ts";
 import { GENERATED_FILE, readRating } from "../src/reuse.ts";
-import { fillRequest, PROMPT_VERSION } from "../src/prompts.ts";
-import { parseTemplate } from "../src/template.ts";
+import { concreteAutomatic } from "../src/shuffle.ts";
+import { captionRequest } from "../src/prompts.ts";
 import type {
 	AutomaticResult,
 	GeneratedMeme,
@@ -49,35 +49,14 @@ const custom = [
 		caption: ["manual backups", "automatic backups"],
 	},
 ];
-const templates: Record<string, unknown> = {
+/** Default replies of the caption step, per meme: one line per box and the fact. */
+const captions: Record<string, { lines: string[]; fact: string }> = {
 	"Proud speech": {
-		lines: [
-			"She {achievement} is what she did. And on this floor, {name} is a legend!",
-		],
-		slots: [
-			{ name: "achievement", hint: "deed", original: "fixed the printer" },
-			{ name: "name", hint: "who", original: "Dana" },
-		],
-		voice: "proud",
-	},
-	"Two panel": {
-		lines: ["{rejected}", "{preferred}"],
-		slots: [
-			{ name: "rejected", hint: "worse", original: "manual backups" },
-			{ name: "preferred", hint: "better", original: "automatic backups" },
-		],
-		voice: "",
-	},
-};
-const fillings: Record<string, unknown> = {
-	"Proud speech": {
-		values: { achievement: "backed CUDA", name: "Jensen Huang" },
-		emphasis: { after: 1, text: "CUDA!!" },
+		lines: ["Jensen Huang backed CUDA. Legend!"],
 		fact: "Jensen Huang backed CUDA.",
 	},
 	"Two panel": {
-		values: { rejected: "CPU-only math", preferred: "CUDA" },
-		emphasis: null,
+		lines: ["CPU-only math", "CUDA"],
 		fact: "CUDA moved math to GPUs.",
 	},
 };
@@ -179,11 +158,9 @@ function fixture(
 						JSON.stringify(
 							system.startsWith("You choose which meme")
 								? { choice: 1 }
-								: system.startsWith("You turn the caption")
-									? templates[memeOf(request)]
-									: system.startsWith("You check one study fact")
-										? { agrees: true }
-										: fillings[memeOf(request)],
+								: system.startsWith("You check one study fact")
+									? { agrees: true }
+									: captions[memeOf(request)],
 						);
 					return {
 						role: "assistant",
@@ -221,7 +198,7 @@ function fixture(
 }
 const offline = { useMemegen: false };
 
-test("generate picks a meme, templates it once, fills it and starts its cooldown", async (t) => {
+test("generate picks a meme, writes one line per box and starts its cooldown", async (t) => {
 	const f = fixture(t, { memes: [custom[0]] });
 	const { call } = f.start();
 	await call("save-settings", offline);
@@ -230,12 +207,8 @@ test("generate picks a meme, templates it once, fills it and starts its cooldown
 		prompt: "Who backed CUDA?",
 		context: "GPU history",
 	});
-	assert.deepEqual(first.lines, [
-		"She backed CUDA is what she did. CUDA!! And on this floor, Jensen Huang is a legend!",
-	]);
-	assert.deepEqual(first.templateLines, [
-		"She {achievement} is what she did. And on this floor, {name} is a legend!",
-	]);
+	assert.deepEqual(first.lines, ["Jensen Huang backed CUDA. Legend!"]);
+	assert.equal("templateLines" in first, false, "no template step any more");
 	assert.deepEqual(first.originalCaption, custom[0]!.caption);
 	assert.equal(first.fact, "Jensen Huang backed CUDA.");
 	assert.deepEqual(first.concept, {
@@ -254,11 +227,7 @@ test("generate picks a meme, templates it once, fills it and starts its cooldown
 	);
 	assert.deepEqual(first.meme.boxes, defaultBoxes(1));
 
-	assert.equal(
-		f.requests.length,
-		3,
-		"one template request, one fill request, one fact check",
-	);
+	assert.equal(f.requests.length, 2, "one caption request, one fact check");
 	for (const request of f.requests) {
 		assert.deepEqual(
 			request.model,
@@ -269,16 +238,16 @@ test("generate picks a meme, templates it once, fills it and starts its cooldown
 		assert.ok(request.signal);
 	}
 	assert.match(
-		String(f.requests[1]!.context.messages[0]!.content),
-		/Who backed CUDA\?[\s\S]*GPU history/,
+		String(f.requests[0]!.context.messages[0]!.content),
+		/Who backed CUDA\?[\s\S]*GPU history[\s\S]*Meme: Proud speech/,
 	);
 
 	const usage = f.stored().usage["custom:proud-speech"];
 	assert.equal(usage.uses, 1);
 	assert.ok(usage.dueAt >= before + 14 * 86_400_000);
-	// The template is cached: the next meme from the same image costs one request.
+	// Nothing to cache: the next meme costs the same two requests.
 	await call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
-	assert.equal(f.requests.length, 5);
+	assert.equal(f.requests.length, 4);
 	assert.equal(f.stored().usage["custom:proud-speech"].uses, 2);
 	assert.equal((await call<PluginState>("get-state")).pool.coolingDown, 1);
 });
@@ -337,7 +306,9 @@ test("the model picks a fitting meme among those not cooling down, and the joke 
 		String(pick.context.messages[0]!.content),
 		/Proud speech: She fixed the printer/,
 	);
-	assert.match(f.requests[2]!.context.systemPrompt!, /funny/);
+	assert.match(pick.context.systemPrompt!, /joke structure/);
+	assert.match(f.requests[1]!.context.systemPrompt!, /funny/);
+	assert.match(f.requests[1]!.context.systemPrompt!, /Tight copy/);
 
 	// The meme cooling down is filtered out before the model sees the list: nothing to pick.
 	const second = await call<GeneratedMeme>("generate", {
@@ -372,48 +343,25 @@ test("an unusable pick falls back to a random meme that is not cooling down", as
 	);
 });
 
-test("an emphasis is dropped when the setting is off", async (t) => {
-	const f = fixture(t, { memes: [custom[0]] });
-	const { call } = f.start();
-	await call("save-settings", { ...offline, emphasis: false });
-	const meme = await call<GeneratedMeme>("generate", {
-		prompt: "Who backed CUDA?",
-	});
-	assert.equal(meme.emphasis, null);
-	assert.deepEqual(meme.lines, [
-		"She backed CUDA is what she did. And on this floor, Jensen Huang is a legend!",
-	]);
-	assert.match(f.requests[1]!.context.systemPrompt!, /Set "emphasis" to null/);
-});
-
 test("a rejected reply gets one correction, then the meme is abandoned for another", async (t) => {
-	const reworded = JSON.stringify({
-		lines: ["She {achievement}! {name} rules!"],
-		slots: [
-			{ name: "achievement", hint: "", original: "fixed the printer" },
-			{ name: "name", hint: "", original: "Dana" },
-		],
-		voice: "",
-	});
+	// Two lines for a one-box meme: rejected with the reason, then corrected.
+	const tooMany = JSON.stringify({ lines: ["a", "b"], fact: "f" });
 	const corrected = fixture(t, {
 		memes: [custom[0]],
-		reply: (request, call) => (call === 1 ? { text: reworded } : {}),
+		reply: (request, call) => (call === 1 ? { text: tooMany } : {}),
 	});
 	const first = corrected.start();
 	await first.call("save-settings", offline);
 	await first.call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
-	assert.equal(corrected.requests.length, 4);
+	assert.equal(corrected.requests.length, 3, "caption, correction, fact check");
 	const retry = corrected.requests[1]!.context.messages;
 	assert.equal(retry.length, 3, "the correction continues the same exchange");
-	assert.match(
-		String(retry[2]!.content),
-		/does not reproduce the original caption/,
-	);
+	assert.match(String(retry[2]!.content), /exactly 1 entry, one per text box/);
 
-	// "Proud speech" never yields a valid template: the plugin moves on to the other meme.
+	// "Proud speech" never yields a usable caption: the plugin moves on to the other meme.
 	const stubborn = fixture(t, {
 		reply: (request) =>
-			request.context.systemPrompt!.startsWith("You turn the caption") &&
+			request.context.systemPrompt!.startsWith("You write the text") &&
 			stubborn.memeOf(request) === "Proud speech"
 				? { text: "I cannot do that." }
 				: {},
@@ -433,15 +381,6 @@ test("a rejected reply gets one correction, then the meme is abandoned for anoth
 		stubborn.stored().usage["custom:proud-speech"],
 		undefined,
 		"a meme that was never shown does not cool down",
-	);
-	assert.equal(
-		stubborn.requests.filter(
-			(request) =>
-				request.context.systemPrompt!.startsWith("You turn the caption") &&
-				stubborn.memeOf(request) === "Proud speech",
-		).length,
-		2,
-		"an untemplatable meme is not paid for again",
 	);
 
 	const hopeless = fixture(t, {
@@ -475,7 +414,7 @@ test("a fact that disagrees with the question is regenerated, then shown", async
 	});
 	assert.equal(meme.fact, "Jensen Huang backed CUDA.");
 	const fills = f.requests.filter((request) =>
-		request.context.systemPrompt!.startsWith("You write the caption"),
+		request.context.systemPrompt!.startsWith("You write the text"),
 	);
 	assert.equal(fills.length, 2);
 	assert.match(
@@ -498,7 +437,7 @@ test("when no caption agrees, no meme is shown and nothing is used up", async (t
 		message: FACT_CHECK.UNRELIABLE_MESSAGE,
 	});
 	const fills = f.requests.filter((request) =>
-		request.context.systemPrompt!.startsWith("You write the caption"),
+		request.context.systemPrompt!.startsWith("You write the text"),
 	);
 	assert.equal(fills.length, FACT_CHECK.MAX_FACT_ATTEMPTS);
 	assert.deepEqual(f.stored().usage, {});
@@ -558,25 +497,68 @@ test("model selection is explicit and failures are reported, not hidden", async 
 	await assert.rejects(c.call("generate", "x"), /operation input object/);
 });
 
-test("only one generation runs at a time", async (t) => {
+test("the learner's request cancels a running meme; automatic memes give way", async (t) => {
 	let release!: () => void;
 	const gate = new Promise<void>((resolve) => {
 		release = resolve;
 	});
+	// A slow model that stops as soon as its request is cancelled.
 	const f = fixture(t, {
 		memes: [custom[0]],
-		reply: async () => {
-			await gate;
-			return {};
-		},
+		reply: (request) =>
+			new Promise<Reply>((resolve) => {
+				if (request.signal?.aborted) return resolve({ stopReason: "aborted" });
+				request.signal?.addEventListener("abort", () =>
+					resolve({ stopReason: "aborted" }),
+				);
+				gate.then(() => resolve({}));
+			}),
 	});
 	const { call } = f.start();
-	await call("save-settings", offline);
-	const running = call<GeneratedMeme>("generate", { prompt: "x" });
-	await assert.rejects(call("generate", { prompt: "y" }), /already being made/);
+	await call("save-settings", { ...offline, automaticMemes: "every" });
+	const first = call<GeneratedMeme>("generate", {
+		prompt: "x",
+		requestId: "a",
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	// An automatic meme never interrupts: it is refused while one is made.
+	await assert.rejects(
+		call("auto-meme", { key: "k", prompt: "x" }),
+		/already being made/,
+	);
+	// "Another meme" or "Try again": the running meme is cancelled, this one runs.
+	const second = call<GeneratedMeme>("generate", {
+		prompt: "y",
+		requestId: "b",
+	});
+	await assert.rejects(first, /cancelled/);
 	release();
-	assert.equal((await running).meme.id, "custom:proud-speech");
-	await call<GeneratedMeme>("generate", { prompt: "y" });
+	assert.equal((await second).meme.id, "custom:proud-speech");
+
+	// Closing the window cancels its own request only.
+	let hold!: () => void;
+	const stuck = new Promise<void>((resolve) => {
+		hold = resolve;
+	});
+	t.after(() => hold());
+	const g = fixture(t, {
+		memes: [custom[0]],
+		reply: (request) =>
+			new Promise<Reply>((resolve) => {
+				request.signal?.addEventListener("abort", () =>
+					resolve({ stopReason: "aborted" }),
+				);
+				stuck.then(() => resolve({}));
+			}),
+	});
+	const other = g.start();
+	await other.call("save-settings", offline);
+	const closing = other.call("generate", { prompt: "x", requestId: "c" });
+	await new Promise((resolve) => setImmediate(resolve));
+	await other.call("cancel", { requestId: "someone-else" });
+	await other.call("cancel", { requestId: "c" });
+	await assert.rejects(closing, /cancelled/);
+	assert.deepEqual(g.stored().usage, {}, "a cancelled meme uses nothing up");
 });
 
 test("settings are validated, persisted and survive a restart", async (t) => {
@@ -586,7 +568,6 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 	assert.deepEqual(initial.settings, {
 		model: null,
 		captionModel: null,
-		emphasis: true,
 		cooldownDays: 14,
 		cooldownGrowth: 2,
 		useMemegen: true,
@@ -633,11 +614,11 @@ test("settings are validated, persisted and survive a restart", async (t) => {
 		/Unknown setting/,
 	);
 	await assert.rejects(
-		first.call("save-settings", { emphasis: false, model: "x" }),
+		first.call("save-settings", { webSearch: false, model: "x" }),
 		/model/,
 	);
 	assert.equal(
-		(await first.call<PluginState>("get-state")).settings.emphasis,
+		(await first.call<PluginState>("get-state")).settings.webSearch,
 		true,
 		"a rejected patch changes nothing",
 	);
@@ -703,6 +684,127 @@ test("images are served from plugin data and checked by content", async (t) => {
 		null,
 		"no image server: nothing is fetched",
 	);
+});
+
+test("catalogue memes are drawn by the image server; failures fall back to the blank image", async (t) => {
+	const paths: string[] = [];
+	const RENDERED = Buffer.concat([PNG, Buffer.from("rendered")]);
+	let renderFails = false;
+	const server = http.createServer((request, response) => {
+		paths.push(request.url!);
+		if (
+			request.url === "/images/drake/CPU--only_math/CUDA~q.png" &&
+			!renderFails
+		) {
+			response.writeHead(200, { "content-type": "image/png" });
+			response.end(RENDERED);
+		} else if (request.url === "/images/drake.jpg") {
+			response.writeHead(200, { "content-type": "image/png" });
+			response.end(PNG);
+		} else {
+			response.writeHead(404);
+			response.end();
+		}
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.close());
+	const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+	const f = fixture(t);
+	const { call } = f.start();
+	await call("save-settings", { imageBaseUrl: base });
+	const rendered = await call<MemeImage>("get-image", {
+		id: "memegen:drake",
+		lines: ["CPU-only math", "CUDA?"],
+	});
+	assert.deepEqual(rendered, {
+		mimeType: "image/png",
+		data: RENDERED.toString("base64"),
+		rendered: true,
+	});
+	assert.deepEqual(paths, ["/images/drake/CPU--only_math/CUDA~q.png"]);
+
+	// No lines, a wrong line count, or a custom meme: the blank image, nothing drawn remotely.
+	paths.length = 0;
+	const blank = { mimeType: "image/png", data: PNG.toString("base64") };
+	assert.deepEqual(
+		await call<MemeImage>("get-image", { id: "memegen:drake" }),
+		blank,
+	);
+	assert.deepEqual(
+		await call<MemeImage>("get-image", { id: "memegen:drake", lines: ["one"] }),
+		blank,
+	);
+	assert.deepEqual(
+		await call<MemeImage>("get-image", { id: "memegen:drake", lines: "x" }),
+		blank,
+	);
+	assert.deepEqual(paths, ["/images/drake.jpg"], "the blank image is cached");
+	const own = await call<MemeImage>("get-image", {
+		id: "custom:proud-speech",
+		lines: ["a"],
+	});
+	assert.equal(own?.rendered, undefined);
+	assert.deepEqual(paths, ["/images/drake.jpg"], "custom memes stay local");
+
+	// The server cannot draw it: the blank image comes back, for the page to caption.
+	renderFails = true;
+	assert.deepEqual(
+		await call<MemeImage>("get-image", {
+			id: "memegen:drake",
+			lines: ["CPU-only math", "CUDA?"],
+		}),
+		rendered,
+		"a rendered meme already fetched is served from the cache",
+	);
+	assert.deepEqual(
+		await call<MemeImage>("get-image", {
+			id: "memegen:drake",
+			lines: ["something", "new"],
+		}),
+		blank,
+	);
+});
+
+test("the image server starts drawing during generation; get-image reuses that download", async (t) => {
+	const paths: string[] = [];
+	const server = http.createServer((request, response) => {
+		paths.push(request.url!);
+		response.writeHead(200, { "content-type": "image/png" });
+		response.end(PNG);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.close());
+	const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+	const f = fixture(t, {
+		memes: [],
+		reply: (request) => {
+			const system = request.context.systemPrompt!;
+			if (!system.startsWith("You write the text")) return {};
+			const boxes = Number(/Write exactly (\d+) line/.exec(system)![1]);
+			return {
+				text: JSON.stringify({
+					lines: Array.from({ length: boxes }, (_, index) => `line ${index}`),
+					fact: "A fact.",
+				}),
+			};
+		},
+	});
+	const { call } = f.start();
+	await call("save-settings", { imageBaseUrl: base });
+	const meme = await call<GeneratedMeme>("generate", {
+		prompt: "What is CUDA?",
+	});
+	assert.equal(meme.meme.origin, "memegen");
+	const rendered = (path: string) => path.split("/").length > 3;
+	for (let tick = 0; tick < 50 && !paths.some(rendered); tick++)
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	assert.equal(paths.filter(rendered).length, 1, "drawn during generation");
+	const image = await call<MemeImage>("get-image", {
+		id: meme.meme.id,
+		lines: meme.lines,
+	});
+	assert.equal(image.rendered, true);
+	assert.equal(paths.filter(rendered).length, 1, "not drawn a second time");
 });
 
 test("remote images are downloaded once, then served from the cache", async (t) => {
@@ -852,45 +954,14 @@ test("own memes: the README steps work end to end and come before the catalogue"
 			)
 				return {};
 			const meme = f.memeOf(request);
-			if (meme in templates) return {};
+			if (meme in captions) return {};
 			if (meme !== name)
 				return { stopReason: "error", errorMessage: `asked about ${meme}` };
 			return {
-				text: JSON.stringify(
-					request.context.systemPrompt!.startsWith("You turn the caption")
-						? {
-								lines: [
-									"He {achievement} is what he did. He was a brave {descriptor}. And in this house, {name} is a hero!",
-								],
-								slots: [
-									{
-										name: "achievement",
-										hint: "deed",
-										original: "discovered America",
-									},
-									{
-										name: "descriptor",
-										hint: "who",
-										original: "Italian explorer",
-									},
-									{
-										name: "name",
-										hint: "name",
-										original: "Christopher Columbus",
-									},
-								],
-								voice: "emotional",
-							}
-						: {
-								values: {
-									achievement: "backed CUDA",
-									descriptor: "Taiwanese-American industrialist",
-									name: "Jensen Huang",
-								},
-								emphasis: { after: 1, text: "CUDA!!" },
-								fact: "Jensen Huang backed CUDA.",
-							},
-				),
+				text: JSON.stringify({
+					lines: ["Jensen Huang backed CUDA. Hero!"],
+					fact: "Jensen Huang backed CUDA.",
+				}),
 			};
 		},
 	});
@@ -913,9 +984,7 @@ test("own memes: the README steps work end to end and come before the catalogue"
 		prompt: "Who backed CUDA?",
 	});
 	assert.equal(meme.meme.id, "custom:brave-explorer");
-	assert.deepEqual(meme.lines, [
-		"He backed CUDA is what he did. CUDA!! He was a brave Taiwanese-American industrialist. And in this house, Jensen Huang is a hero!",
-	]);
+	assert.deepEqual(meme.lines, ["Jensen Huang backed CUDA. Hero!"]);
 	assert.deepEqual(await call<MemeImage>("get-image", { id: meme.meme.id }), {
 		mimeType: "image/jpeg",
 		data: jpeg.toString("base64"),
@@ -1178,8 +1247,7 @@ async function webFixture(
 			)
 				return {
 					text: JSON.stringify({
-						values: { achievement: "led a platform", name: "the boss" },
-						emphasis: null,
+						lines: ["The boss led a platform"],
 						answer: "Jensen Huang",
 						fact: "Think of the company's founder.",
 					}),
@@ -1318,7 +1386,7 @@ test("web search: off, unconfigured, NC licence or no term match skip the judge"
 // #36 comic effect
 test("caption model: null uses the other steps' model; a set one writes the caption only", async (t) => {
 	const isFill = (request: PluginInferenceRequest) =>
-		request.context.systemPrompt!.startsWith("You write the caption");
+		request.context.systemPrompt!.startsWith("You write the text");
 	const plain = fixture(t, { memes: [custom[0]] });
 	const a = plain.start();
 	await a.call("save-settings", offline);
@@ -1347,7 +1415,7 @@ test("caption model: null uses the other steps' model; a set one writes the capt
 		"the caption step uses the set model",
 	);
 	const rest = split.requests.filter((request) => !isFill(request));
-	assert.ok(rest.length >= 2, "template and fact check still ran");
+	assert.ok(rest.length >= 1, "the fact check still ran");
 	for (const request of rest)
 		assert.deepEqual(
 			request.model,
@@ -1382,7 +1450,7 @@ test("web search settings: the agent is configured by the learner, not hardcoded
 
 // #17 meme modes
 
-test("Answer mode is unchanged: same fill request, same result shape, early reads refused", async (t) => {
+test("Answer mode: the caption request, the result shape, early reads refused", async (t) => {
 	const f = fixture(t, { memes: [custom[0]] });
 	const { call } = f.start();
 	await call("save-settings", offline);
@@ -1393,43 +1461,38 @@ test("Answer mode is unchanged: same fill request, same result shape, early read
 		...concept,
 		options: ["Jensen Huang", "Lisa Su"],
 	});
-	const expected = fillRequest({
-		meme: { name: "Proud speech" },
-		template: parseTemplate(templates["Proud speech"], custom[0]!.caption),
+	const expected = captionRequest({
+		meme: { ...custom[0]!, id: "custom:proud-speech" },
 		concept,
-		emphasis: true,
+		tone: "none",
 	});
-	assert.equal(f.requests[1]!.context.systemPrompt, expected.systemPrompt);
-	assert.equal(f.requests[1]!.context.messages[0]!.content, expected.user);
+	assert.equal(f.requests[0]!.context.systemPrompt, expected.systemPrompt);
+	assert.equal(f.requests[0]!.context.messages[0]!.content, expected.user);
 	assert.equal("mode" in meme, false);
 	assert.equal(meme.fact, "Jensen Huang backed CUDA.");
-	assert.deepEqual(meme.emphasis, { after: 1, text: "CUDA!!" });
+	assert.deepEqual(meme.lines, ["Jensen Huang backed CUDA. Legend!"]);
 
-	// Template, fill, and the #7 fact check.
-	assert.equal(f.requests.length, 3);
+	// The caption and the #7 fact check.
+	assert.equal(f.requests.length, 2);
 	await assert.rejects(
 		call("generate", { ...concept, early: true }),
 		/Reveal the question first/,
 	);
-	assert.equal(f.requests.length, 3, "no model call for a refused early read");
+	assert.equal(f.requests.length, 2, "no model call for a refused early read");
 });
 
 const hintReply = (request: PluginInferenceRequest): Reply =>
-	request.context.systemPrompt!.startsWith("You turn the caption")
+	request.context.systemPrompt!.startsWith("You choose which meme")
 		? {}
 		: {
 				text: JSON.stringify({
-					values: {
-						achievement: "launched a GPU platform",
-						name: "the GeForce maker's boss",
-					},
-					emphasis: { after: 1, text: "CUDA!!" },
+					lines: ["The GeForce maker's boss launched a GPU platform"],
 					answer: "Jensen Huang",
 					fact: "Think of who runs the company behind GeForce.",
 				}),
 			};
 
-test("Hint mode reads early questions, hides its answer and drops emphasis", async (t) => {
+test("Hint mode reads early questions and hides its answer", async (t) => {
 	const f = fixture(t, { memes: [custom[0]], reply: hintReply });
 	const { call } = f.start();
 	await call("save-settings", { ...offline, mode: "hint" });
@@ -1439,9 +1502,8 @@ test("Hint mode reads early questions, hides its answer and drops emphasis", asy
 		early: true,
 	});
 	assert.equal(meme.mode, "hint");
-	assert.equal(meme.emphasis, null);
 	assert.deepEqual(meme.lines, [
-		"She launched a GPU platform is what she did. And on this floor, the GeForce maker's boss is a legend!",
+		"The GeForce maker's boss launched a GPU platform",
 	]);
 	assert.equal(meme.fact, "Think of who runs the company behind GeForce.");
 	assert.ok(
@@ -1449,9 +1511,9 @@ test("Hint mode reads early questions, hides its answer and drops emphasis", asy
 		"the model's answer is never returned",
 	);
 	assert.ok(!JSON.stringify(f.stored()).includes("Jensen"), "nor stored");
-	assert.match(f.requests[1]!.context.systemPrompt!, /gives a hint/);
+	assert.match(f.requests[0]!.context.systemPrompt!, /gives a hint/);
 	assert.match(
-		String(f.requests[1]!.context.messages[0]!.content),
+		String(f.requests[0]!.context.messages[0]!.content),
 		/have not seen it yet/,
 	);
 	await assert.rejects(
@@ -1461,20 +1523,17 @@ test("Hint mode reads early questions, hides its answer and drops emphasis", asy
 });
 
 test("a Think caption that gives the answer away is corrected once, then another meme is tried", async (t) => {
-	const leaking: Record<string, unknown> = {
-		"Proud speech": { achievement: "beat Lisa Su", name: "Jensen Huang" },
-		"Two panel": { rejected: "Lisa Su", preferred: "Jensen Huang" },
+	const leaking: Record<string, string[]> = {
+		"Proud speech": ["Jensen Huang beat Lisa Su"],
+		"Two panel": ["Lisa Su", "Jensen Huang"],
 	};
 	const f = fixture(t, {
 		reply: (request) =>
-			/^You (turn the caption|choose which meme)/.test(
-				request.context.systemPrompt!,
-			)
+			/^You choose which meme/.test(request.context.systemPrompt!)
 				? {}
 				: {
 						text: JSON.stringify({
-							values: leaking[f.memeOf(request)],
-							emphasis: null,
+							lines: leaking[f.memeOf(request)],
 							answer: "Jensen Huang",
 							fact: "Which one backed CUDA?",
 						}),
@@ -1488,15 +1547,12 @@ test("a Think caption that gives the answer away is corrected once, then another
 			options: ["Jensen Huang", "Lisa Su"],
 		}),
 		(error: Error) =>
-			/gives the answer away/.test(error.message) &&
+			/give the answer away/.test(error.message) &&
 			!error.message.includes("Jensen"),
 	);
 	// The #4 pick step runs once (two candidates); fills exclude it.
 	const fills = f.requests.filter(
-		(request) =>
-			!/^You (turn the caption|choose which meme)/.test(
-				request.context.systemPrompt!,
-			),
+		(request) => !/^You choose which meme/.test(request.context.systemPrompt!),
 	);
 	assert.equal(fills.length, 4, "two memes, one correction each");
 	assert.match(fills[0]!.context.systemPrompt!, /only one is true/);
@@ -1681,38 +1737,40 @@ test("only after wrong answers, and nothing once the shared daily budget is spen
 });
 
 // Integration fixes (see docs/ and the commit messages).
-test("fix(I): templates cached by an older prompt version are rebuilt", async (t) => {
+test("state from the template version loads: cached templates and emphasis are dropped", async (t) => {
 	const f = fixture(t, { memes: [custom[0]] });
 	const first = f.start();
 	await first.call("save-settings", offline);
-	await first.call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
-	const cached = f.stored().templates["custom:proud-speech"];
-	assert.equal(cached.promptVersion, PROMPT_VERSION);
 	first.dispose();
 	const stored = f.stored();
-	stored.templates["custom:proud-speech"].promptVersion = PROMPT_VERSION - 1;
+	stored.settings.emphasis = false;
+	stored.templates = {
+		"custom:proud-speech": {
+			lines: ["{x}"],
+			slots: [{ name: "x", hint: "", original: "y" }],
+			voice: "",
+			captionHash: "h",
+			promptVersion: 4,
+		},
+	};
 	fs.writeFileSync(
 		path.join(f.dataDirectory, "state.json"),
 		JSON.stringify(stored),
 	);
-	const before = f.requests.length;
 	const second = f.start();
-	await second.call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
-	const templateCalls = f.requests
-		.slice(before)
-		.filter((request) =>
-			request.context.systemPrompt!.startsWith("You turn the caption"),
-		);
-	assert.equal(templateCalls.length, 1, "the stale template is asked again");
+	const meme = await second.call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	assert.deepEqual(meme.lines, ["Jensen Huang backed CUDA. Legend!"]);
+	const after = f.stored();
+	assert.equal("templates" in after, false);
+	assert.equal("emphasis" in after.settings, false);
+	assert.equal(after.settings.useMemegen, false, "other settings are kept");
 });
 
 test("fix(C): a meme made in one mode is never reused in another", async (t) => {
 	const hintJson = JSON.stringify({
-		values: {
-			achievement: "launched a GPU platform",
-			name: "the GeForce maker's boss",
-		},
-		emphasis: null,
+		lines: ["The GeForce maker's boss launched a GPU platform"],
 		answer: "Jensen Huang",
 		fact: "Think of who runs the company behind GeForce.",
 	});
@@ -1720,7 +1778,6 @@ test("fix(C): a meme made in one mode is never reused in another", async (t) => 
 		memes: [custom[0]],
 		reply: (request) => {
 			const system = request.context.systemPrompt!;
-			if (system.startsWith("You turn the caption")) return {};
 			if (system.startsWith("You check one study fact"))
 				return { text: '{"agrees": true}' };
 			if (system.includes("gives a hint")) return { text: hintJson };
@@ -1743,11 +1800,7 @@ test("fix(C): a meme made in one mode is never reused in another", async (t) => 
 
 test("fix(B): the fact check runs only in Answer mode", async (t) => {
 	const hintJson = JSON.stringify({
-		values: {
-			achievement: "launched a GPU platform",
-			name: "the GeForce maker's boss",
-		},
-		emphasis: null,
+		lines: ["The GeForce maker's boss launched a GPU platform"],
 		answer: "Jensen Huang",
 		fact: "Think of who runs the company behind GeForce.",
 	});
@@ -1755,7 +1808,6 @@ test("fix(B): the fact check runs only in Answer mode", async (t) => {
 		memes: [custom[0]],
 		reply: (request) => {
 			const system = request.context.systemPrompt!;
-			if (system.startsWith("You turn the caption")) return {};
 			if (system.includes("gives a hint")) return { text: hintJson };
 			return {};
 		},
@@ -1805,8 +1857,7 @@ test("fix(D): web search is skipped in Hint and Think modes", async (t) => {
 
 test("fix(E): the teacher tool always makes Answer memes, whatever the mode", async (t) => {
 	const hintJson = JSON.stringify({
-		values: { achievement: "launched a GPU platform", name: "the boss" },
-		emphasis: null,
+		lines: ["The boss launched a GPU platform"],
 		answer: "Jensen Huang",
 		fact: "Think of the company's founder.",
 	});
@@ -1814,7 +1865,6 @@ test("fix(E): the teacher tool always makes Answer memes, whatever the mode", as
 		memes: [custom[0]],
 		reply: (request) => {
 			const system = request.context.systemPrompt!;
-			if (system.startsWith("You turn the caption")) return {};
 			if (system.startsWith("You check one study fact"))
 				return { text: '{"agrees": true}' };
 			if (system.includes("gives a hint")) return { text: hintJson };
@@ -1872,6 +1922,26 @@ test("fix(F): the search stage is reported only when a search runs", async (t) =
 	);
 });
 
+test("a web search that takes too long is skipped: the meme is generated instead", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const web = f.start({
+		searchTimeoutMs: 50,
+		// Never answers on its own; stops only when its signal is aborted.
+		createSearchAgent: () => ({
+			find: ({ signal }) =>
+				new Promise((_, reject) =>
+					signal?.addEventListener("abort", () => reject(signal.reason)),
+				),
+		}),
+	});
+	await web.call("save-settings", { ...offline, searchAgent: other });
+	const meme = await web.call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	assert.equal(meme.meme.id, "custom:proud-speech");
+	assert.deepEqual(meme.lines, ["Jensen Huang backed CUDA. Legend!"]);
+});
+
 test("fix(A): an earlier meme is reused before any web search", async (t) => {
 	const w = await webFixture(t, []);
 	await w.call("save-settings", { cooldownDays: 0 });
@@ -1889,11 +1959,7 @@ const shuffleReply = (request: PluginInferenceRequest): Reply => {
 	const system = request.context.systemPrompt!;
 	const caption = (fact: string) => ({
 		text: JSON.stringify({
-			values: {
-				achievement: "launched a GPU platform",
-				name: "the GeForce maker's boss",
-			},
-			emphasis: null,
+			lines: ["The GeForce maker's boss launched a GPU platform"],
 			answer: "Jensen Huang",
 			fact,
 		}),
@@ -2295,4 +2361,95 @@ test("#38 no repeat per question: one automatic meme, asked or revealed, persist
 		status: "seen",
 	});
 	assert.equal(f.requests.length, requests, "no second meme for the question");
+});
+
+// Shuffle for Tone, Teacher memes and Automatic memes
+
+test("tone Shuffle: each meme gets one drawn tone, kept across fact-check rewrites", async (t) => {
+	let checks = 0;
+	const f = fixture(t, {
+		memes: [custom[0]],
+		reply: (request) => {
+			if (!request.context.systemPrompt!.startsWith("You check one study fact"))
+				return {};
+			checks++;
+			return { text: JSON.stringify({ agrees: checks > 1 }) };
+		},
+	});
+	let draws = 0;
+	const { call } = f.start({
+		random: () => {
+			draws++;
+			return 0.5;
+		},
+	});
+	await call("save-settings", { ...offline, tone: "shuffle" });
+	assert.equal((await call<PluginState>("get-state")).settings.tone, "shuffle");
+	await call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
+	const captions = f.requests.filter((request) =>
+		request.context.systemPrompt!.startsWith("You write the text"),
+	);
+	assert.equal(captions.length, 2, "rewritten once after the fact check");
+	for (const request of captions)
+		assert.match(request.context.systemPrompt!, /- Tone: Write sarcastic/);
+	assert.equal(draws, 1, "one draw per meme");
+});
+
+test("teacher Shuffle: each teacher turn states its own rule in the tool", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	const draws = [0, 0.9];
+	const { call, registered } = f.start({ random: () => draws.shift() ?? 0 });
+	await call("save-settings", { ...offline, teacherMemes: "shuffle" });
+	const turn = () =>
+		(
+			registered[0]!.create({ chatId: "c", agent: "teacher" }) as {
+				description: string;
+			}[]
+		)[0]!.description;
+	assert.match(turn(), /This turn: you may call it, without being asked/);
+	assert.match(
+		turn(),
+		/This turn: call it only right after the learner answered a question incorrectly/,
+	);
+	await call("save-settings", { teacherMemes: "teacher" });
+	assert.doesNotMatch(turn(), /This turn/);
+});
+
+test("automatic Shuffle: each question counts only on its own trigger, once", async (t) => {
+	const keyFor = (trigger: string) => {
+		for (let index = 0; ; index++)
+			if (concreteAutomatic("shuffle", `s:q${index}`) === trigger)
+				return `s:q${index}`;
+	};
+	const f = fixture(t, { memes: [custom[0]], reply: shuffleReply });
+	const { call } = f.start();
+	await call("save-settings", { ...offline, automaticMemes: "shuffle" });
+	const reveal = keyFor("every");
+	assert.deepEqual(
+		await call<AutomaticResult>("auto-meme", asked(reveal)),
+		{ status: "off" },
+		"a reveal question ignores its asked check",
+	);
+	const shown = await call<AutomaticResult>("auto-meme", {
+		key: reveal,
+		prompt: "Who backed CUDA?",
+	});
+	assert.equal(shown.status, "meme");
+	assert.deepEqual(
+		await call<AutomaticResult>("auto-meme", { key: reveal, prompt: "x" }),
+		{ status: "seen" },
+	);
+	const early = keyFor("asked");
+	assert.deepEqual(
+		await call<AutomaticResult>("auto-meme", { key: early, prompt: "x" }),
+		{ status: "off" },
+		"an asked question ignores its reveal check",
+	);
+	const hint = await call<AutomaticResult>("auto-meme", asked(early));
+	assert.equal(hint.status, "meme");
+	assert.equal(
+		hint.status === "meme" ? hint.meme.mode : undefined,
+		"hint",
+		"asked memes never state the answer",
+	);
 });

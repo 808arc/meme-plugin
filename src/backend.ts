@@ -601,11 +601,33 @@ export function activate(
 		)(state.settings);
 		if (!agent) return null;
 		stage("search");
-		// One time budget for the search and its judges: past it, generate instead.
-		const budget = AbortSignal.any([
-			chainSignal(),
-			AbortSignal.timeout(options.searchTimeoutMs ?? WEB_SEARCH.timeoutMs),
-		]);
+		// One time budget for the search and its judges: past it, generate instead. A
+		// plain timer, cleared at the end: AbortSignal.timeout does not keep Node 22 alive.
+		const timer = new AbortController();
+		const timeout = setTimeout(
+			() => timer.abort(new Error("The web search took too long.")),
+			options.searchTimeoutMs ?? WEB_SEARCH.timeoutMs,
+		);
+		try {
+			return await searchWithin(
+				AbortSignal.any([chainSignal(), timer.signal]),
+				agent,
+				purpose,
+				concept,
+				exclude,
+			);
+		} finally {
+			clearTimeout(timeout);
+		}
+	}
+
+	async function searchWithin(
+		budget: AbortSignal,
+		agent: SearchAgent,
+		purpose: PluginCallPurpose,
+		concept: Concept,
+		exclude: string | undefined,
+	): Promise<GeneratedMeme | null> {
 		let hits: SearchHit[];
 		try {
 			hits = await searchCandidates(agent, concept, budget);

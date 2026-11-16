@@ -1,5 +1,5 @@
 /** Shapes shared by the backend, the frontend and the tests. JSON-compatible only. */
-import type { ConcreteMode, MemeMode, Tone } from "./config.ts";
+import type { ConcreteMode, MemeMode, ToneSetting } from "./config.ts";
 
 /** Where one caption line is drawn, as fractions of the image (memegen's model). */
 export interface Box {
@@ -33,32 +33,10 @@ export interface Meme {
 	dated?: true;
 }
 
-export interface Slot {
-	name: string;
-	/** What kind of thing belongs here. */
-	hint: string;
-	/** The words this slot stood for in the original caption. */
-	original: string;
-}
-
-/** Step 3 of the README: fixed memetic phrasing plus fillable slots. */
-export interface Template {
-	/** Template lines aligned with the caption lines; slots are written `{name}`. */
+/** Model-written meme text: one line per box, and the fact it teaches. */
+export interface Caption {
+	/** Final text, one entry per box. */
 	lines: string[];
-	slots: Slot[];
-	/** How the meme's character talks, used for the optional emphasis. */
-	voice: string;
-}
-
-export interface Emphasis {
-	/** 1-based template sentence the interjection follows. */
-	after: number;
-	text: string;
-}
-
-export interface Filling {
-	values: Record<string, string>;
-	emphasis: Emphasis | null;
 	/** The fact the meme teaches, in one plain sentence. */
 	fact: string;
 }
@@ -89,11 +67,8 @@ export interface GeneratedMeme {
 	webMatch?: "answer" | "related";
 	concept: Concept;
 	originalCaption: string[];
-	templateLines: string[];
 	/** Final text, one entry per box. */
 	lines: string[];
-	values: Record<string, string>;
-	emphasis: Emphasis | null;
 	/** Answer mode: the fact. Hint: the hint. Think: the question to the learner. */
 	fact: string;
 	/** Handle for rating this meme (see rateGenerated in src/reuse.ts). */
@@ -112,8 +87,6 @@ export interface Settings {
 	model: { provider: string; id: string } | null;
 	/** #36: model for the caption step only. Null: the same model as the other steps. */
 	captionModel: { provider: string; id: string } | null;
-	/** Step 5 of the README. */
-	emphasis: boolean;
 	/** Days a meme stays out of rotation after its first use. 0 disables the cooldown. */
 	cooldownDays: number;
 	/** Each further use multiplies the cooldown by this factor. */
@@ -137,26 +110,30 @@ export interface Settings {
 	searchProvider: SearchProvider;
 	/** #17: what the caption does. Answer states the fact (default). #32: Shuffle cycles the concrete modes. */
 	mode: MemeMode;
-	/** #36: comic tone of the caption wording. "none" (default) adds nothing. Facts never change. */
-	tone: Tone;
+	/** #36: comic tone of the caption wording. "none" (default) adds nothing. Facts never
+	 * change. Shuffle: a random tone per meme. */
+	tone: ToneSetting;
 	/** Experimental: when the teacher agent may add a meme to the chat (tool `meme_teach`). */
 	teacherMemes: TeacherMemes;
 	/** #18: memes that appear on their own after a question's answer is shown. */
 	automaticMemes: AutomaticMemes;
 }
 
-/** off: never. teacher: the teacher decides, within the cap. wrong: only after a wrong answer. */
-export type TeacherMemes = "off" | "teacher" | "wrong";
+/** off: never. teacher: the teacher decides, within the cap. wrong: only after a wrong answer.
+ * shuffle: teacher or wrong, drawn again each teacher turn. */
+export type TeacherMemes = "off" | "teacher" | "wrong" | "shuffle";
 
 /** off: never. Answer trigger (after the reveal): every, nth (config), wrong (after a graded
- * wrong answer). Asked trigger (#38, when the question is asked): asked, asked-nth (config). */
+ * wrong answer). Asked trigger (#38, when the question is asked): asked, asked-nth (config).
+ * shuffle: one of those five per question, derived from the question key. */
 export type AutomaticMemes =
 	| "off"
 	| "every"
 	| "nth"
 	| "wrong"
 	| "asked"
-	| "asked-nth";
+	| "asked-nth"
+	| "shuffle";
 
 /** One answered question, as the frontend saw it in the session history. */
 export interface AutomaticRequest extends Concept {
@@ -206,4 +183,6 @@ export interface MemeImage {
 	mimeType: string;
 	/** Base64 without a data: prefix. */
 	data: string;
+	/** The image server drew the caption into the image: show it as is, no overlay. */
+	rendered?: true;
 }

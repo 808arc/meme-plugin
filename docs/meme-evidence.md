@@ -137,7 +137,7 @@ Entry: citation, link, key finding, **implication for this plugin**.
 - **Citation:** Bates, L. et al. (2023). arXiv:2311.06649.
 - **Link:** [arxiv.org/abs/2311.06649](https://arxiv.org/abs/2311.06649)
 - **Key finding:** templatic memes with a semantic structure adaptable to the creator's intent. Knowledge base of over 5,200 templates. Confirmed in abstract.
-- **Implication for this plugin:** matches the pipeline (reduce caption to template, fill slots). Possible source of template data.
+- **Implication for this plugin:** matched the first pipeline (reduce caption to template, fill slots). The current pipeline follows the Vellum meme-generator skill instead: pick by joke structure, write one line per box. Possible source of template data.
 
 ## Seed list from issue #2 (journal articles, not on arXiv)
 

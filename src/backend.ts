@@ -1,6 +1,6 @@
 /** Server side of the meme plugin: owns settings, the meme pool, the cooldown
- * record, cached templates and every model call. Writes only under ctx.dataDirectory. */
-import { createHash, randomUUID } from "node:crypto";
+ * record and every model call. Writes only under ctx.dataDirectory. */
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type {
@@ -21,6 +21,7 @@ import {
 	PICK_STEP,
 	STAGE_TOPIC,
 	TEACHER_TOOL,
+	WEB_SEARCH,
 } from "./config.ts";
 import {
 	agreementRequest,
@@ -30,6 +31,14 @@ import {
 } from "./factcheck.ts";
 import { isMissingFile } from "./fs-errors.ts";
 import { loadImage } from "./images.ts";
+import { renderedImageUrl } from "./memegen-url.ts";
+import {
+	type ConcreteAutomaticMemes,
+	type ConcreteTeacherMemes,
+	concreteAutomatic,
+	concreteTeacher,
+	concreteTone,
+} from "./shuffle.ts";
 import {
 	CUSTOM_FILE,
 	CUSTOM_IMAGES,
@@ -45,11 +54,9 @@ import {
 } from "./modes.ts";
 import {
 	extractJson,
-	fillRequest,
+	captionRequest,
 	type ModelRequest,
-	PROMPT_VERSION,
 	pickRequest,
-	templateRequest,
 } from "./prompts.ts";
 import {
 	chooseReuse,
@@ -76,18 +83,18 @@ import {
 	judgeRequest,
 	parseJudgement,
 	type SearchAgent,
+	type SearchHit,
 	searchCandidates,
 	verdict,
 	webMeme,
 } from "./search.ts";
 import { applySettingsPatch, readSettings } from "./settings.ts";
 import { type Fetch, searchAgentFor, tavilyKey } from "./tavily.ts";
-import { assemble, parseFilling, parseTemplate } from "./template.ts";
+import { cleanText, parseCaption } from "./caption.ts";
 import type {
-	AutomaticMemes,
 	AutomaticResult,
 	Concept,
-	Filling,
+	Caption,
 	GeneratedMeme,
 	Meme,
 	MemeExport,
@@ -95,7 +102,6 @@ import type {
 	PluginState,
 	Settings,
 	TeacherMemes,
-	Template,
 	Usage,
 } from "./types.ts";
 
@@ -103,6 +109,9 @@ const STATE_VERSION = 1;
 const STATE_FILE = "state.json";
 /** A meme whose caption cannot be templated is skipped; try this many before giving up. */
 const MEME_ATTEMPTS = 3;
+/** Bounds on lines a page may ask the image server to draw (the URL stays short). */
+const MAX_RENDER_LINES = 10;
+const MAX_RENDER_LINE_LENGTH = 200;
 const MAX_OUTPUT_TOKENS = 2048;
 const TOOL_NAME = "meme_teach";
 /** Reveal rule (prompt-only, see docs/teacher-meme-tool.md): the tool only ever gets a
@@ -111,6 +120,14 @@ const REVEAL_RULE = `Only call it after the learner has answered the current que
 const TEACHER_INSTRUCTIONS: Record<Exclude<TeacherMemes, "off">, string> = {
 	teacher: `A meme plugin is enabled. You may call the ${TOOL_NAME} tool, without being asked, when a meme would help a concept stick. ${REVEAL_RULE}`,
 	wrong: `A meme plugin is enabled. Call the ${TOOL_NAME} tool only right after the learner answered a question incorrectly, to help the correct answer stick once it has been revealed. ${REVEAL_RULE}`,
+	shuffle: `A meme plugin is enabled. When to call the ${TOOL_NAME} tool changes from turn to turn: follow the rule in the tool's description for this turn. ${REVEAL_RULE}`,
+};
+/** Shuffle: the rule for one teacher turn, carried in the tool's description. */
+const TEACHER_TURN_RULE: Record<ConcreteTeacherMemes, string> = {
+	teacher:
+		"This turn: you may call it, without being asked, when a meme would help a concept stick.",
+	wrong:
+		"This turn: call it only right after the learner answered a question incorrectly.",
 };
 
 /** Local calendar day, for the automatic-meme budget. */
@@ -118,7 +135,7 @@ const dayKey = (now: number) => new Date(now).toLocaleDateString("en-CA");
 
 /** #38: which moment an automatic setting reacts to; null when off. */
 const automaticTrigger = (
-	setting: AutomaticMemes,
+	setting: ConcreteAutomaticMemes | "off",
 ): "reveal" | "asked" | null =>
 	setting === "off"
 		? null
@@ -131,20 +148,30 @@ const automaticTrigger = (
 const askedMode = (mode: MemeMode): ConcreteMode =>
 	mode === "think" ? "think" : "hint";
 
-interface CachedTemplate extends Template {
-	captionHash: string;
-	promptVersion: number;
-}
 interface Stored {
 	version: number;
 	settings: Settings;
 	usage: Record<string, Usage>;
-	templates: Record<string, CachedTemplate>;
 	/** Automatic memes made today; the shared budget in config.ts. */
 	automatic: { day: string; count: number };
 	/** #18: questions that already had their automatic turn, and how many were answered.
 	 * #38: how many questions were asked (asked trigger). */
 	buttonless: { seen: string[]; revealed: number; asked: number };
+}
+
+/** Caption lines sent with get-image; anything else is ignored (no rendered image). */
+function readLines(value: unknown): string[] | undefined {
+	if (
+		!Array.isArray(value) ||
+		!value.length ||
+		value.length > MAX_RENDER_LINES ||
+		value.some(
+			(line) =>
+				typeof line !== "string" || line.length > MAX_RENDER_LINE_LENGTH,
+		)
+	)
+		return undefined;
+	return value.map(cleanText);
 }
 
 /** The model answered, but not with something the plugin can accept. */
@@ -175,7 +202,6 @@ function readState(file: string): Stored {
 				version: STATE_VERSION,
 				settings: readSettings(undefined),
 				usage: {},
-				templates: {},
 				automatic: { day: "", count: 0 },
 				buttonless: { seen: [], revealed: 0, asked: 0 },
 			};
@@ -206,18 +232,10 @@ function readState(file: string): Stored {
 				dueAt: item.dueAt!,
 			};
 	}
-	const templates = (
-		stored.templates &&
-		typeof stored.templates === "object" &&
-		!Array.isArray(stored.templates)
-			? stored.templates
-			: {}
-	) as Record<string, CachedTemplate>;
 	return {
 		version: STATE_VERSION,
 		settings: readSettings(stored.settings),
 		usage,
-		templates,
 		automatic: readAutomatic(stored.automatic),
 		buttonless: readButtonless(stored.buttonless),
 	};
@@ -263,6 +281,10 @@ export interface BackendOptions {
 	env?: NodeJS.ProcessEnv;
 	/** #31: HTTP layer for Tavily. Default: global fetch. Tests inject a stub. */
 	fetch?: Fetch;
+	/** Shuffle draws for Tone and Teacher memes. Default: Math.random. */
+	random?: () => number;
+	/** Time budget of the web search step. Default: WEB_SEARCH.timeoutMs. */
+	searchTimeoutMs?: number;
 }
 
 export function activate(
@@ -270,11 +292,18 @@ export function activate(
 	options: BackendOptions = {},
 ): () => void {
 	const file = path.join(ctx.dataDirectory, STATE_FILE);
+	const random = options.random ?? Math.random;
 	let state = readState(file);
 	let disposed = false;
-	let generating = false;
-	/** Memes the current model could not template; not retried until the next activation. */
-	const unusable = new Set<string>();
+	/** The one meme chain running now, if any. Its signal stops every step of it. */
+	let chain: {
+		controller: AbortController;
+		signal: AbortSignal;
+		requestId: string | null;
+		done: Promise<void>;
+	} | null = null;
+	/** The signal for work done by the running chain (the plugin's own outside one). */
+	const chainSignal = () => chain?.signal ?? ctx.signal;
 	/** The web meme shown last; its image is served by `get-image`. */
 	const webFound = new Map<string, Meme>();
 	/** #32: memes made in Shuffle, per chat (session id). In memory: a plugin reload
@@ -284,6 +313,8 @@ export function activate(
 	const alive = () => {
 		if (disposed || ctx.signal.aborted)
 			throw new Error("Meme plugin is disabled.");
+		if (chain?.controller.signal.aborted)
+			throw new Error("The meme request was cancelled.");
 	};
 	const save = (next: Stored) => {
 		alive();
@@ -392,6 +423,7 @@ export function activate(
 		model: PluginModelSpec,
 		request: ModelRequest,
 		parse: (raw: unknown) => T,
+		signal: AbortSignal = chainSignal(),
 	): Promise<T> {
 		const messages: Parameters<
 			typeof ctx.inference.complete
@@ -405,7 +437,7 @@ export function activate(
 				purpose,
 				context: { systemPrompt: request.systemPrompt, messages },
 				options: { maxTokens: MAX_OUTPUT_TOKENS },
-				signal: ctx.signal,
+				signal,
 			});
 			alive();
 			if (reply.stopReason === "error" || reply.stopReason === "aborted")
@@ -478,83 +510,61 @@ export function activate(
 		}
 	}
 
-	/** Step 3, cached: a meme's template does not depend on the concept. */
-	async function templateFor(
-		meme: Meme,
-		model: PluginModelSpec,
-		purpose: PluginCallPurpose,
-	): Promise<Template> {
-		const captionHash = createHash("sha256")
-			.update(meme.caption.join("\n"))
-			.digest("hex");
-		const cached = state.templates[meme.id];
-		if (
-			cached?.captionHash === captionHash &&
-			cached.promptVersion === PROMPT_VERSION
-		) {
-			try {
-				return parseTemplate(
-					{ lines: cached.lines, slots: cached.slots, voice: cached.voice },
-					meme.caption,
-				);
-			} catch {
-				/* hand-edited or stale: rebuild */
-			}
-		}
-		const template = await ask(purpose, model, templateRequest(meme), (raw) =>
-			parseTemplate(raw, meme.caption),
-		);
-		save({
-			...state,
-			templates: {
-				...state.templates,
-				[meme.id]: { ...template, captionHash, promptVersion: PROMPT_VERSION },
-			},
-		});
-		return template;
-	}
-
-	/** Steps 4 and 5 plus the fact check. A fact that disagrees with the question is
+	/** Step 3 plus the fact check. A fact that disagrees with the question is
 	 * regenerated, a bounded number of times; after that the meme is not shown at all. */
-	async function fillChecked(
+	async function captionChecked(
 		purpose: PluginCallPurpose,
 		model: PluginModelSpec,
 		captionModel: PluginModelSpec,
 		meme: Meme,
-		template: Template,
 		concept: Concept,
-	): Promise<Filling> {
+	): Promise<Caption> {
 		let avoid: string | undefined;
+		// Shuffle: one tone per meme, kept across fact-check rewrites.
+		const tone = concreteTone(state.settings.tone, random);
 		for (let attempt = 1; ; attempt++) {
-			const filling = await ask(
+			const caption = await ask(
 				purpose,
 				captionModel,
-				fillRequest({
-					meme,
-					template,
-					concept,
-					emphasis: state.settings.emphasis,
-					tone: state.settings.tone,
-					avoid,
-				}),
-				(raw) => parseFilling(raw, template),
+				captionRequest({ meme, concept, tone, avoid }),
+				(raw) => parseCaption(raw, meme.caption.length),
 			);
+			// The image server draws while the fact check runs.
+			prefetchRendered(meme, caption.lines);
 			// Certain agreement needs no model call; otherwise a cheap self-check decides.
 			stage("checking");
 			const verdict =
-				(concept.answer && quickAgreement(filling.fact, concept.answer)) ??
+				(concept.answer && quickAgreement(caption.fact, concept.answer)) ??
 				(await ask(
 					purpose,
 					model,
-					agreementRequest({ concept, fact: filling.fact }),
+					agreementRequest({ concept, fact: caption.fact }),
 					parseAgreement,
 				));
-			if (verdict) return filling;
+			if (verdict) return caption;
 			if (attempt >= FACT_CHECK.MAX_FACT_ATTEMPTS)
 				throw new Error(FACT_CHECK.UNRELIABLE_MESSAGE);
-			avoid = filling.fact;
+			avoid = caption.fact;
 		}
 	}
+
+	/** Start drawing a catalogue meme on the image server, so the page's get-image finds
+	 * it cached or in flight. Best effort: a failure here is retried by get-image. */
+	const prefetchRendered = (meme: Meme, lines: readonly string[]) => {
+		if (meme.origin !== "memegen") return;
+		const url = renderedImageUrl(
+			state.settings.imageBaseUrl,
+			meme.id,
+			lines,
+			meme.caption.length,
+		);
+		if (url)
+			loadImage(
+				{ image: url, origin: "memegen" },
+				ctx.dataDirectory,
+				ctx.signal,
+			).catch(() => {});
+	};
 
 	/** "Once used, store it": start or extend the meme's cooldown. */
 	const markUsed = (id: string) =>
@@ -591,28 +601,62 @@ export function activate(
 		)(state.settings);
 		if (!agent) return null;
 		stage("search");
-		const hits = await searchCandidates(agent, concept, ctx.signal);
-		alive();
-		for (const hit of hits) {
-			const meme = webMeme(hit);
-			if (meme.id === exclude) continue;
-			let match: "answer" | "related" | null;
-			try {
-				const model = await resolveModel();
-				const judgement = await ask(
-					purpose,
-					model,
-					judgeRequest(hit, concept),
-					parseJudgement,
-				);
-				match = verdict(hit, judgement);
-				// Never show a credit-only card: the image must load before the meme is offered.
-				if (match) await loadImage(meme, ctx.dataDirectory, ctx.signal);
-			} catch {
-				match = null;
-			}
+		// One time budget for the search and its judges: past it, generate instead.
+		const budget = AbortSignal.any([
+			chainSignal(),
+			AbortSignal.timeout(options.searchTimeoutMs ?? WEB_SEARCH.timeoutMs),
+		]);
+		let hits: SearchHit[];
+		try {
+			hits = await searchCandidates(agent, concept, budget);
+		} catch (error) {
 			alive();
-			if (!match) continue;
+			if (!budget.aborted) throw error;
+			return null;
+		}
+		alive();
+		const found = hits
+			.map((hit) => ({ hit, meme: webMeme(hit) }))
+			.filter(({ meme }) => meme.id !== exclude);
+		if (!found.length) return null;
+		let model: PluginModelSpec;
+		try {
+			model = await resolveModel();
+		} catch {
+			alive();
+			return null;
+		}
+		// All hits are judged at once (at most WEB_SEARCH.maxJudged): one model wait, not
+		// one per hit. The first acceptable hit in search order wins.
+		const matches = await Promise.all(
+			found.map(async ({ hit }) => {
+				try {
+					return verdict(
+						hit,
+						await ask(
+							purpose,
+							model,
+							judgeRequest(hit, concept),
+							parseJudgement,
+							budget,
+						),
+					);
+				} catch {
+					return null;
+				}
+			}),
+		);
+		alive();
+		for (const [index, { meme }] of found.entries()) {
+			const match = matches[index];
+			if (!match || budget.aborted) continue;
+			// Never show a credit-only card: the image must load before the meme is offered.
+			try {
+				await loadImage(meme, ctx.dataDirectory, budget);
+			} catch {
+				alive();
+				continue;
+			}
 			webFound.clear();
 			webFound.set(meme.id, meme);
 			return {
@@ -628,10 +672,7 @@ export function activate(
 				webMatch: match,
 				concept,
 				originalCaption: [],
-				templateLines: [],
 				lines: [],
-				values: {},
-				emphasis: null,
 				fact: "",
 			};
 		}
@@ -646,9 +687,9 @@ export function activate(
 	 *  1. reuse an earlier meme for the same question and mode (#9);
 	 *  2. web search for an existing meme (#11): Answer mode only, and only when
 	 *     enabled and a search agent is configured;
-	 *  3. template: own memes first by the own-memes share (#21), then the catalogue,
-	 *     through the pick step (#4); templates are cached per meme;
-	 *  4. caption: fill the template (#4 humor rule; #17 mode prompts);
+	 *  3. pick: own memes first by the own-memes share (#21), then the catalogue,
+	 *     through the pick step (#4), by joke structure (Vellum skill);
+	 *  4. caption: one tight line per box (#4 humor rule; #17 mode prompts);
 	 *  5. check: Answer runs the fact check (#7); Hint and Think run the no-answer
 	 *     check (#17).
 	 * `mode` is passed in, never read from settings here: automatic callers (teacher
@@ -750,7 +791,7 @@ export function activate(
 			throw new Error(
 				"The meme pool is empty. Enable the bundled catalogue or add custom memes.",
 			);
-		const tried = new Set<string>([...unusable, ...(exclude ? [exclude] : [])]);
+		const tried = new Set<string>(exclude ? [exclude] : []);
 		// Never let exclusions empty the pool: a repeat beats no meme.
 		if (memes.every((meme) => tried.has(meme.id))) tried.clear();
 		let failure: unknown;
@@ -780,50 +821,33 @@ export function activate(
 			if (!meme) break;
 			tried.add(meme.id);
 			stage("writing");
-			let template: Template;
+			// Step 4. Answer mode: then the fact check (#7); a meme whose fact cannot be
+			// made to agree is not shown. Hint and Think (#17): the no-answer check; a
+			// caption that gives the answer away is rejected and, after one correction,
+			// another meme is tried.
+			let caption: Caption;
 			try {
-				template = await templateFor(meme, model, purpose);
+				caption =
+					mode === "answer"
+						? await captionChecked(purpose, model, captionModel, meme, concept)
+						: await ask(
+								purpose,
+								captionModel,
+								modeFillRequest(mode, { meme, concept, early }),
+								(raw) => {
+									stage("checking");
+									return parseModeFilling(raw, meme.caption.length, options);
+								},
+							);
+				if (mode !== "answer") prefetchRendered(meme, caption.lines);
 			} catch (error) {
 				alive();
 				// A failed request (quota, network) is not the meme's fault: report it as is.
+				// A rejected caption is the reply's fault, not the meme's: try another meme.
 				if (!(error instanceof RejectedReply)) throw error;
-				unusable.add(meme.id);
 				failure = error;
 				continue;
 			}
-			// Steps 4 and 5. Answer mode: then the fact check (#7); a meme whose fact
-			// cannot be made to agree is not shown. Hint and Think (#17): the no-answer
-			// check; a caption that gives the answer away is rejected and, after one
-			// correction, another meme is tried.
-			let filling: Filling;
-			if (mode === "answer")
-				filling = await fillChecked(
-					purpose,
-					model,
-					captionModel,
-					meme,
-					template,
-					concept,
-				);
-			else {
-				try {
-					filling = await ask(
-						purpose,
-						captionModel,
-						modeFillRequest(mode, { meme, template, concept, early }),
-						(raw) => {
-							stage("checking");
-							return parseModeFilling(raw, template, options);
-						},
-					);
-				} catch (error) {
-					alive();
-					if (!(error instanceof RejectedReply)) throw error;
-					failure = error;
-					continue;
-				}
-			}
-			const emphasis = state.settings.emphasis ? filling.emphasis : null;
 			// "Once used, store it": only a meme that was actually produced starts its cooldown.
 			markUsed(meme.id);
 			const stored: StoredMeme = {
@@ -836,11 +860,8 @@ export function activate(
 					hasImage: !!meme.image,
 				},
 				originalCaption: meme.caption,
-				templateLines: template.lines,
-				lines: assemble(template, filling.values, emphasis),
-				values: filling.values,
-				emphasis,
-				fact: filling.fact,
+				lines: caption.lines,
+				fact: caption.fact,
 				...modeField(mode, labelled),
 			};
 			const entry = newEntry(stored, Date.now());
@@ -894,15 +915,39 @@ export function activate(
 		return { path: target, images };
 	}
 
-	// One paid request chain at a time, however many windows or tool calls ask.
-	const guarded = async (run: () => Promise<GeneratedMeme>) => {
-		alive();
-		if (generating) throw new Error("A meme is already being made.");
-		generating = true;
+	/** One paid request chain at a time, however many windows or tool calls ask. The
+	 * learner's own request (`supersede`) cancels a running chain and waits for it to
+	 * stop; automatic and teacher memes give way instead. */
+	const guarded = async (
+		run: () => Promise<GeneratedMeme>,
+		{
+			supersede = false,
+			requestId = null,
+		}: { supersede?: boolean; requestId?: string | null } = {},
+	) => {
+		if (disposed || ctx.signal.aborted)
+			throw new Error("Meme plugin is disabled.");
+		while (chain) {
+			if (!supersede) throw new Error("A meme is already being made.");
+			chain.controller.abort();
+			await chain.done;
+		}
+		const controller = new AbortController();
+		let finish = () => {};
+		const mine = {
+			controller,
+			signal: AbortSignal.any([ctx.signal, controller.signal]),
+			requestId,
+			done: new Promise<void>((resolve) => {
+				finish = resolve;
+			}),
+		};
+		chain = mine;
 		try {
 			return await run();
 		} finally {
-			generating = false;
+			if (chain === mine) chain = null;
+			finish();
 		}
 	};
 
@@ -913,11 +958,13 @@ export function activate(
 		chat.memeTurn !== null &&
 		chat.turn - chat.memeTurn < TEACHER_TOOL.turnsPerMeme;
 
-	const teacherTool = (chat: { turn: number; memeTurn: number | null }) => ({
+	const teacherTool = (
+		chat: { turn: number; memeTurn: number | null },
+		turnRule?: ConcreteTeacherMemes,
+	) => ({
 		name: TOOL_NAME,
 		label: "Teacher meme",
-		description:
-			"Put one meme in the chat to help a concept stick. Only after the learner has tried the question; never reveal an unrevealed answer.",
+		description: `Put one meme in the chat to help a concept stick. Only after the learner has tried the question; never reveal an unrevealed answer.${turnRule ? ` ${TEACHER_TURN_RULE[turnRule]}` : ""}`,
 		parameters: {
 			type: "object",
 			properties: {
@@ -976,7 +1023,14 @@ export function activate(
 					turns.set(context.chatId, chat);
 					chat.turn++;
 					// Over the cap or budget, the tool is simply not offered this turn.
-					return capReached(chat) || !budgetLeft() ? [] : [teacherTool(chat)];
+					if (capReached(chat) || !budgetLeft()) return [];
+					// Shuffle: a fresh rule each teacher turn, stated in the tool's description.
+					return [
+						teacherTool(
+							chat,
+							mode === "shuffle" ? concreteTeacher(mode, random) : undefined,
+						),
+					];
 				},
 			}),
 		];
@@ -1009,32 +1063,45 @@ export function activate(
 			save({ ...state, usage: {} });
 			return view(chatKey(input));
 		}),
-		ctx.handle("generate", (input) =>
-			guarded(async () => {
-				const requestId = object(input).requestId;
-				stageFor = typeof requestId === "string" ? requestId : null;
-				const chat = chatKey(input);
-				const setting = state.settings.mode;
-				const position = shufflePosition.get(chat) ?? 0;
-				try {
-					const meme = await generate(
-						input,
-						"user",
-						concreteMode(setting, position),
-						setting === "shuffle",
-					);
-					// #32: a meme made in Shuffle moves the chat to the next mode.
-					if (setting === "shuffle") shufflePosition.set(chat, position + 1);
-					// A reopened (reused) meme carries the learner's earlier rating.
-					const rating = meme.generatedId
-						? (readRating(ctx.dataDirectory, meme.generatedId) ?? null)
-						: null;
-					return { ...meme, rating };
-				} finally {
-					stageFor = null;
-				}
-			}),
-		),
+		// The window closed or moved on: stop its chain so it costs nothing more.
+		ctx.handle("cancel", (input) => {
+			const requestId = object(input).requestId;
+			if (typeof requestId === "string" && chain?.requestId === requestId)
+				chain.controller.abort();
+			return null;
+		}),
+		ctx.handle("generate", (input) => {
+			const requestId = object(input).requestId;
+			return guarded(
+				async () => {
+					stageFor = typeof requestId === "string" ? requestId : null;
+					const chat = chatKey(input);
+					const setting = state.settings.mode;
+					const position = shufflePosition.get(chat) ?? 0;
+					try {
+						const meme = await generate(
+							input,
+							"user",
+							concreteMode(setting, position),
+							setting === "shuffle",
+						);
+						// #32: a meme made in Shuffle moves the chat to the next mode.
+						if (setting === "shuffle") shufflePosition.set(chat, position + 1);
+						// A reopened (reused) meme carries the learner's earlier rating.
+						const rating = meme.generatedId
+							? (readRating(ctx.dataDirectory, meme.generatedId) ?? null)
+							: null;
+						return { ...meme, rating };
+					} finally {
+						stageFor = null;
+					}
+				},
+				{
+					supersede: true,
+					requestId: typeof requestId === "string" ? requestId : null,
+				},
+			);
+		}),
 		ctx.handle("rate", (input) => {
 			alive();
 			const { id, rating } = object(input);
@@ -1053,7 +1120,8 @@ export function activate(
 			const key = typeof value.key === "string" ? value.key : "";
 			if (!key || key.length > 1000)
 				throw new Error("An automatic meme needs a question key.");
-			const setting = state.settings.automaticMemes;
+			// Shuffle: the trigger for this question, the same on its asked and reveal checks.
+			const setting = concreteAutomatic(state.settings.automaticMemes, key);
 			const asked = value.asked === true;
 			// Only the setting's own trigger counts; the other one is off.
 			if (automaticTrigger(setting) !== (asked ? "asked" : "reveal"))
@@ -1125,6 +1193,30 @@ export function activate(
 						webFound.get(id))
 					: undefined;
 			if (!meme) throw new Error("Unknown meme.");
+			// Vellum skill: the image server draws the caption. Catalogue memes only; a
+			// failure falls back to the blank image, which the page captions itself.
+			const lines = readLines(object(input).lines);
+			const rendered =
+				lines && meme.origin === "memegen"
+					? renderedImageUrl(
+							state.settings.imageBaseUrl,
+							meme.id,
+							lines,
+							meme.caption.length,
+						)
+					: undefined;
+			if (rendered)
+				try {
+					const image = await loadImage(
+						{ image: rendered, origin: "memegen" },
+						ctx.dataDirectory,
+						ctx.signal,
+					);
+					alive();
+					if (image) return { ...image, rendered: true };
+				} catch {
+					alive();
+				}
 			const image = await loadImage(
 				meme,
 				ctx.dataDirectory,

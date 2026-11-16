@@ -4,8 +4,8 @@ import {
 	MEME_MODES,
 	type MemeMode,
 	OWN_MEMES,
-	TONES,
-	type Tone,
+	TONE_SETTINGS,
+	type ToneSetting,
 } from "./config.ts";
 import type {
 	AutomaticMemes,
@@ -24,6 +24,7 @@ export const TEACHER_MEMES: readonly TeacherMemes[] = Object.freeze([
 	"off",
 	"teacher",
 	"wrong",
+	"shuffle",
 ]);
 
 export const AUTOMATIC_MEMES: readonly AutomaticMemes[] = Object.freeze([
@@ -33,12 +34,12 @@ export const AUTOMATIC_MEMES: readonly AutomaticMemes[] = Object.freeze([
 	"wrong",
 	"asked",
 	"asked-nth",
+	"shuffle",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
 	model: null,
 	captionModel: null,
-	emphasis: true,
 	cooldownDays: 14,
 	cooldownGrowth: 2,
 	useMemegen: true,
@@ -155,7 +156,6 @@ export function applySettingsPatch(
 					);
 				next.searchProvider = value as SearchProvider;
 				break;
-			case "emphasis":
 			case "useMemegen":
 			case "webSearch":
 				if (typeof value !== "boolean")
@@ -192,9 +192,9 @@ export function applySettingsPatch(
 				next.mode = value as MemeMode;
 				break;
 			case "tone":
-				if (!TONES.includes(value as Tone))
-					throw new Error(`tone must be one of ${TONES.join(", ")}`);
-				next.tone = value as Tone;
+				if (!TONE_SETTINGS.includes(value as ToneSetting))
+					throw new Error(`tone must be one of ${TONE_SETTINGS.join(", ")}`);
+				next.tone = value as ToneSetting;
 				break;
 			case "teacherMemes":
 				if (!TEACHER_MEMES.includes(value as TeacherMemes))

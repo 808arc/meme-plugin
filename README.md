@@ -8,33 +8,32 @@ Turns each concept asked by learnharness about into a meme.
 
 ## How it works
 
-1. Take the concept from the learnharness prompt.
-2. Pick random image meme, your own first. Store used; skip during cooldown (reverse spaced repetition). Picks ignore the concept for now ([#4](https://github.com/808arc/meme-plugin/issues/4)).
-3. Reduce caption to template: fixed phrasing + fillable slots.
-4. Fill the slots with facts about the concept.
-5. Optionally add emphasis in the meme character's voice.
+The process follows the [Vellum meme-generator skill](https://github.com/vellum-ai/vellum-assistant/tree/main/skills/meme-generator):
+
+1. Take the concept from the learnharness prompt. Start with the take: the one fact to remember.
+2. Pick the template whose joke structure fits: comparison → Drake, hot take → Change My Mind, escalation → Galaxy Brain, and so on. Your own memes first. Store used; skip during cooldown (reverse spaced repetition).
+3. Write tight copy: one line per text box, at most 8 words each.
+4. The image server (memegen) draws the lines onto the template. Your own images, or a server that fails, are captioned in the page instead.
 
 ## Example
 
 **Prompt:** Who backed CUDA?
 
-**Random meme:** emotional Tony Soprano image
+**Picked meme:** Drakeposting, best for "this not that" comparisons.
 
-Original text on the image:
+Original lines:
 
-> He discovered America is what he did. He was a brave Italian explorer. And in this house, Christopher Columbus is a hero!
+> 1. left on unread
+> 2. left on read
 
-**Template:**
+**Output lines:**
 
-Pattern recognized in the image text:
+> 1. Waiting for CPUs to do matrix math
+> 2. Jensen Huang betting Nvidia on CUDA
 
-> He {achievement} is what he did. He was a brave {descriptor}. And in this house, {name} is a hero!
+**Fact:** Jensen Huang's Nvidia backed CUDA.
 
-**Output:**
-
-Text that replaces the original on the image, creating the learn-through-memes effect:
-
-> He backed CUDA is what he did. CUDA!! He was a brave Taiwanese-American industrialist. And in this house, Jensen Huang is a hero!
+The image comes back from `https://api.memegen.link/images/drake/Waiting_for_CPUs_to_do_matrix_math/Jensen_Huang_betting_Nvidia_on_CUDA.png`.
 
 ## Use
 
@@ -59,7 +58,8 @@ A chord for **Meme this** is set in Settings → Keyboard. It is unbound until y
 - The meme states the answer. Open it after you have tried the question, not before.
 - An unrevealed question is not read, except by Hint, Think and the asked-question trigger.
 - No question on screen: the plugin uses the teacher's latest message, or asks you to type a concept.
-- Each meme costs one short model request. The first use of a given meme costs one more, to cache its template.
+- Each meme costs one short model request to write it, plus the pick and the fact check when they run.
+- One meme is made at a time. **Another meme**, **Try again** or **Meme this** cancel the one in progress; closing the window cancels it too. Automatic and teacher memes wait their turn instead.
 
 ## Install
 
@@ -86,17 +86,17 @@ replaces only the installed `dist/`.
 | Model | cheap model slot | Writes the captions. |
 | Caption model | Model | Model for the caption text only; picking and fact check keep Model. Set separately, so a stronger model writes captions while the cheap one does the rest. |
 | Meme mode | Answer | Answer: states the fact. Hint, Think: point at it, never state it; also work before reveal. Shuffle: Answer, Hint, Think in turn, one per question; each label shows its mode. |
-| Tone | none | Comic tone of the wording: deadpan, absurd, sarcastic, self-deprecating, playful. Facts unchanged. |
-| Add emphasis | on | Step 5. |
+| Tone | none | Comic tone of the wording: deadpan, absurd, sarcastic, self-deprecating, playful. Shuffle: a random one of these per meme. Facts unchanged. |
 | Cooldown (days) | 14 | How long a used meme stays out of rotation. 0 turns it off. |
 | Cooldown growth | 2 | Each further use of the same meme multiplies its cooldown: 14, 28, 56 … days, at most a year. |
 | Use the bundled catalogue | on | About 200 image memes from [memegen](https://github.com/jacebrowning/memegen). |
-| Automatic memes | off | Meme opens on its own, folded, dismissible. After the answer is revealed: every, every 3rd, or only wrong. When a question is asked: every, or every 3rd; Hint or Think only, never the answer. Shares the daily cap of 10 automatic memes with teacher memes; at the cap, none, and settings say so. Meme this still works. |
-| Image server | `https://api.memegen.link` | Where blank images come from. A self-hosted memegen works too. Empty: captions only. |
+| Automatic memes | off | Meme opens on its own, folded, dismissible. After the answer is revealed: every, every 3rd, or only wrong. When a question is asked: every, or every 3rd; Hint or Think only, never the answer. Shuffle: one of these five per question. Shares the daily cap of 10 automatic memes with teacher memes; at the cap, none, and settings say so. Meme this still works. |
+| Image server | `https://api.memegen.link` | Draws the caption onto catalogue memes, and serves blank images. A self-hosted memegen works too. Empty: captions only, no images. |
 | Minimum cooldown after rejecting (days) | 1 | A meme rejected with **Not this one** stays out at least this long, even with cooldown 0. |
 | Own memes first (%) | 100 | Chance a pick is one of your own memes while one is out of cooldown. 100: always. Lower mixes in the catalogue. |
 | Custom memes folder | empty (`data/`) | Absolute path to a folder with `custom-memes.json` and `custom-images/`. Only read. |
-| Search the web for memes | on | Before generating, look for an existing meme through the search agent. Off: local sources and generation only. |
+| Teacher memes (experimental) | off | In teaching sessions the teacher may put a meme in the chat: when it decides, or only after wrong answers. Shuffle: one of the two, drawn again each teacher turn. |
+| Search the web for memes | on | Before generating, look for an existing meme through the search agent. At most 15 seconds; past that, the meme is generated instead. Off: local sources and generation only. |
 | Search provider | none | none or Tavily. Tavily needs `TAVILY_API_KEY` in the environment; no key, nothing is searched. Tavily gives no licence, so its hits are filtered out. |
 | Search agent | none | The model and provider that search uses. Without one, and with no provider, nothing is searched. |
 
@@ -113,8 +113,8 @@ Each question runs these steps in order, stopping at the first hit:
 
 1. Earlier meme for the same question in the same mode, reused as a limited share of picks. Shipped ([#9](https://github.com/808arc/meme-plugin/issues/9)).
 2. Web search for an existing meme. Answer mode only; on by default; needs a search agent you configure ([#11](https://github.com/808arc/meme-plugin/issues/11)).
-3. Template: your own memes first (100% by default), then the bundled catalogue. The model picks a fitting one; dated templates rank last ([#4](https://github.com/808arc/meme-plugin/issues/4), [#6](https://github.com/808arc/meme-plugin/issues/6), [#21](https://github.com/808arc/meme-plugin/issues/21)).
-4. Caption: the model fills the template. Answer states the fact; Hint points at it; Think asks you to pick ([#4](https://github.com/808arc/meme-plugin/issues/4), [#17](https://github.com/808arc/meme-plugin/issues/17)).
+3. Template: your own memes first (100% by default), then the bundled catalogue. The model picks the one whose joke structure fits; dated templates rank last ([#4](https://github.com/808arc/meme-plugin/issues/4), [#6](https://github.com/808arc/meme-plugin/issues/6), [#21](https://github.com/808arc/meme-plugin/issues/21)).
+4. Caption: the model writes one short line per box. Answer states the fact; Hint points at it; Think asks you to pick ([#4](https://github.com/808arc/meme-plugin/issues/4), [#17](https://github.com/808arc/meme-plugin/issues/17)).
 5. Check: Answer runs the fact check ([#7](https://github.com/808arc/meme-plugin/issues/7)); Hint and Think run the no-answer check ([#17](https://github.com/808arc/meme-plugin/issues/17)).
 
 If no relevant meme is found, the plugin generates a new caption straight away.
@@ -159,8 +159,11 @@ deletes your files.
 
 - The question and the meme's original caption go to the model you chose, through
   LearnHarness's own connection.
-- The image server receives only the meme's id (for example `/images/drake.jpg`), once
-  per meme. Images are cached in `data/image-cache/`.
+- The image server receives the meme's id **and its caption lines**, because it draws
+  them (for example `/images/drake/CPU_math/CUDA.png`). The lines state the answer in
+  Answer mode. To keep captions on your machine, point **Image server** at a
+  self-hosted memegen. Your own memes never go to the server. Blank images (fallback)
+  send only the id. Images are cached in `data/image-cache/`.
 - Nothing else. Writes only in `data/`, even with a custom memes folder elsewhere
   (read only) and for exports. Learning records untouched.
 - Web search for existing memes, on by default. The concept goes to the search agent you configure, and from there to its search providers ([#11](https://github.com/808arc/meme-plugin/issues/11)). Tavily, when chosen: the concept goes to Tavily as the query ([#31](https://github.com/808arc/meme-plugin/issues/31)). A settings switch turns it off.
@@ -179,16 +182,17 @@ npm run sync:memegen -- "<memegen-checkout>"   # refresh the bundled catalogue
 plugin host; it needs a LearnHarness checkout (instructions in the file).
 
 Source map: `src/concept.ts` (step 1), `src/scheduler.ts` and `src/library.ts`
-(step 2), `src/prompts.ts` and `src/template.ts` (steps 3 to 5), `src/backend.ts`
-(storage and model calls), `src/main.ts` and `src/render.ts` (interface).
+(step 2), `src/prompts.ts` and `src/caption.ts` (step 3), `src/memegen-url.ts`
+(step 4), `src/backend.ts` (storage and model calls), `src/main.ts` and
+`src/render.ts` (interface).
 
-Model only proposes. Template accepted only if original words in slots reproduce the
-original caption. Plugin assembles final text; fixed phrasing cannot be reworded.
+Model only proposes. A caption is accepted only with one line per box, each at most
+8 words, and passes the fact check (Answer) or the no-answer check (Hint, Think).
 
 ## Limits
 
 - Facts come from the model and are not checked against a source.
-- Text placement follows memegen's box positions; rotated boxes are approximate.
+- Catalogue memes are drawn by memegen. Own memes, and the fallback when the server fails, follow memegen's box positions in the page; rotated boxes are approximate there.
 - Animated memes are shown as a still image.
 - Bundled catalogue is dated. Tagging and filtering planned ([#6](https://github.com/808arc/meme-plugin/issues/6)).
 

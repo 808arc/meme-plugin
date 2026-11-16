@@ -1,21 +1,15 @@
 /** #17 meme modes: the Hint and Think prompts and the no-answer check. Answer mode
- * keeps using fillRequest in prompts.ts, unchanged. Design: docs/meme-modes.md. */
+ * keeps using captionRequest in prompts.ts, unchanged. Design: docs/meme-modes.md. */
 import {
 	type ConcreteMode,
 	MEME_MODES,
 	type MemeMode,
 	SHUFFLE_SEQUENCE,
 } from "./config.ts";
+import { cleanText, parseCaption } from "./caption.ts";
 import type { ModelRequest } from "./prompts.ts";
-import { numbered } from "./prompts.ts";
-import {
-	assemble,
-	cleanText,
-	MAX_VALUE_LENGTH,
-	parseFilling,
-	sentences,
-} from "./template.ts";
-import type { Concept, Filling, Meme, Template } from "./types.ts";
+import { copyRules, memeBlock } from "./prompts.ts";
+import type { Caption, Concept, Meme } from "./types.ts";
 
 /** The modes whose caption must not state the answer. */
 export type QuestionMode = Exclude<ConcreteMode, "answer">;
@@ -33,8 +27,7 @@ export function concreteMode(
 }
 
 export interface ModeFillInput {
-	meme: Pick<Meme, "name">;
-	template: Template;
+	meme: Pick<Meme, "name" | "caption"> & Partial<Pick<Meme, "id">>;
 	concept: Concept;
 	/** The learner has not revealed the question yet. */
 	early: boolean;
@@ -56,25 +49,21 @@ const NOTE: Record<QuestionMode, string> = {
 		"the question the learner must answer, as one plain sentence (for example: Which panel is true?), without the answer",
 };
 
-/** Hint or Think caption request. Emphasis is always off: it repeats the key term. */
+/** Hint or Think caption request: the same tight one-line-per-box copy as Answer. */
 export function modeFillRequest(
 	mode: QuestionMode,
 	input: ModeFillInput,
 ): ModelRequest {
-	const { template } = input;
 	return {
 		systemPrompt: [
 			...TASK[mode],
-			"You are given a meme template with slots. Fill every slot.",
 			"Rules:",
-			'- Never write the answer, nor a synonym, translation, abbreviation or spelling of it. Never write the text of any answer option. This applies to every slot value and to "fact".',
-			"- Everything the caption says must be true. Never invent names, dates or numbers.",
-			`- Each value is a short phrase (at most ${MAX_VALUE_LENGTH} characters) that reads grammatically inside its sentence. Plain text only.`,
-			"- Do not rewrite the fixed words of the template; you only supply slot values.",
-			'- Set "emphasis" to null.',
-			`- "answer" is the answer you are pointing at, in as few words as possible (at most ${MEME_MODES.maxAnswerLength} characters). It is only used to check the caption and is never shown.`,
+			'- Never write the answer, nor a synonym, translation, abbreviation or spelling of it. Never write the text of any answer option. This applies to every line and to "fact".',
+			"- Everything the meme says must be true. Never invent names, dates or numbers.",
+			...copyRules(input.meme.caption.length),
+			`- "answer" is the answer you are pointing at, in as few words as possible (at most ${MEME_MODES.maxAnswerLength} characters). It is only used to check the meme and is never shown.`,
 			`- "fact" is ${NOTE[mode]}.`,
-			'Reply with one JSON object and nothing else: {"values": {slot_name: string}, "emphasis": null, "answer": string, "fact": string}',
+			'Reply with one JSON object and nothing else: {"lines": string[], "answer": string, "fact": string}',
 		].join("\n"),
 		user: [
 			input.early
@@ -83,9 +72,7 @@ export function modeFillRequest(
 			input.concept.context
 				? `Shown with the question:\n${input.concept.context}`
 				: "",
-			`Meme: ${input.meme.name}${template.voice ? `\nCharacter voice: ${template.voice}` : ""}`,
-			`Template sentences:\n${numbered(sentences(template).map((sentence) => sentence.text))}`,
-			`Slots:\n${template.slots.map((slot) => `- ${slot.name}: ${slot.hint} (the original meme said "${slot.original}")`).join("\n")}`,
+			memeBlock(input.meme),
 		]
 			.filter(Boolean)
 			.join("\n\n"),
@@ -138,15 +125,15 @@ export function readOptions(value: unknown): string[] {
 	return value.map(cleanText).filter(Boolean);
 }
 
-/** Accept a Hint or Think reply only if neither the caption nor the note contains the
+/** Accept a Hint or Think reply only if neither the lines nor the note contain the
  * model's own answer or any option label. The answer is dropped here: it is never
  * returned, stored or shown. Error text never quotes the answer. */
 export function parseModeFilling(
 	raw: unknown,
-	template: Template,
+	boxes: number,
 	options: readonly string[],
-): Filling {
-	const filling = parseFilling(raw, template);
+): Caption {
+	const caption = parseCaption(raw, boxes);
 	const answer = cleanText((raw as Record<string, unknown>).answer);
 	if (!answer)
 		throw new Error(
@@ -156,10 +143,9 @@ export function parseModeFilling(
 		throw new Error(
 			`"answer" is longer than ${MEME_MODES.maxAnswerLength} characters; use the shortest form`,
 		);
-	const lines = assemble(template, filling.values, null);
-	if (givesAnswerAway([...lines, filling.fact], [answer, ...options]))
+	if (givesAnswerAway([...caption.lines, caption.fact], [answer, ...options]))
 		throw new Error(
-			'the caption or "fact" gives the answer away: it contains the answer or an answer option. Point at it without writing it',
+			'the lines or "fact" give the answer away: they contain the answer or an answer option. Point at it without writing it',
 		);
-	return { values: filling.values, emphasis: null, fact: filling.fact };
+	return caption;
 }

@@ -84,16 +84,30 @@ export async function loadImage(
 	} catch (error) {
 		if (!isMissingFile(error)) fs.rmSync(file, { force: true });
 	}
-	const bytes = await download(meme.image, signal);
-	const image = encode(bytes);
-	if (signal.aborted) throw new Error("Meme plugin is disabled.");
-	fs.mkdirSync(cache, { recursive: true });
-	const temporary = path.join(cache, `.${randomUUID()}.tmp`);
-	try {
-		fs.writeFileSync(temporary, bytes, { flag: "wx" });
-		fs.renameSync(temporary, file);
-	} finally {
-		fs.rmSync(temporary, { force: true });
+	// One download per address: a prefetch and the page's request share it.
+	let pending = downloading.get(file);
+	if (!pending) {
+		const url = meme.image;
+		pending = (async () => {
+			const bytes = await download(url, signal);
+			const image = encode(bytes);
+			if (signal.aborted) throw new Error("Meme plugin is disabled.");
+			fs.mkdirSync(cache, { recursive: true });
+			const temporary = path.join(cache, `.${randomUUID()}.tmp`);
+			try {
+				fs.writeFileSync(temporary, bytes, { flag: "wx" });
+				fs.renameSync(temporary, file);
+			} finally {
+				fs.rmSync(temporary, { force: true });
+			}
+			return image;
+		})();
+		downloading.set(file, pending);
+		const forget = () => downloading.delete(file);
+		pending.then(forget, forget);
 	}
-	return image;
+	return pending;
 }
+
+/** Downloads in flight, by cache file. */
+const downloading = new Map<string, Promise<MemeImage>>();

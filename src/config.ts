@@ -78,6 +78,8 @@ export const WEB_SEARCH = Object.freeze({
 	]),
 	/** At most this many prefiltered hits are judged by the model per meme. */
 	maxJudged: 3,
+	/** Time budget for the search and its judges; past it the plugin generates instead. */
+	timeoutMs: 15_000,
 });
 
 // #17 meme modes
@@ -168,6 +170,9 @@ export const TONES = Object.freeze([
 	"playful",
 ] as const);
 export type Tone = (typeof TONES)[number];
+/** The Tone setting: a tone, or Shuffle (a random tone other than "none" per meme). */
+export const TONE_SETTINGS = Object.freeze([...TONES, "shuffle"] as const);
+export type ToneSetting = (typeof TONE_SETTINGS)[number];
 
 // #38 chat-triggered memes
 /** Automatic memes when a question is asked, before the learner answers. They use Hint

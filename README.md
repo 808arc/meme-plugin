@@ -96,7 +96,7 @@ replaces only the installed `dist/`.
 | Own memes first (%) | 100 | Chance a pick is one of your own memes while one is out of cooldown. 100: always. Lower mixes in the catalogue. |
 | Custom memes folder | empty (`data/`) | Absolute path to a folder with `custom-memes.json` and `custom-images/`. Only read. |
 | Teacher memes (experimental) | off | In teaching sessions the teacher may put a meme in the chat: when it decides, or only after wrong answers. Shuffle: one of the two, drawn again each teacher turn. |
-| Search the web for memes | on | Before generating, look for an existing meme through the search agent. At most 15 seconds; past that, the meme is generated instead. Off: local sources and generation only. |
+| Search the web for memes | on | Before generating, look for an existing meme through the search agent. At most 5 seconds; past that, the meme is generated instead. Off: local sources and generation only. |
 | Search provider | none | none or Tavily. Tavily needs `TAVILY_API_KEY` in the environment; no key, nothing is searched. Tavily gives no licence, so its hits are filtered out. |
 | Search agent | none | The model and provider that search uses. Without one, and with no provider, nothing is searched. |
 

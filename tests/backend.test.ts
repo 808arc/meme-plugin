@@ -29,6 +29,8 @@ import type {
 
 const cheap = { provider: "fixture", id: "cheap-model" };
 const other = { provider: "fixture", id: "other-model" };
+/** Plugin calls ask for thinking "off" when the model offers it (fixtures do). */
+const quiet = (model: object) => ({ ...model, thinkingLevel: "off" });
 const PNG = Buffer.from(
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
 	"base64",
@@ -231,7 +233,7 @@ test("generate picks a meme, writes one line per box and starts its cooldown", a
 	for (const request of f.requests) {
 		assert.deepEqual(
 			request.model,
-			cheap,
+			quiet(cheap),
 			"no explicit model: the configured cheap slot",
 		);
 		assert.equal(request.purpose, "user");
@@ -467,7 +469,7 @@ test("model selection is explicit and failures are reported, not hidden", async 
 	await assert.rejects(a.call("generate", { prompt: "x" }), /Choose a model/);
 	await a.call("save-settings", { model: other });
 	await a.call<GeneratedMeme>("generate", { prompt: "x" });
-	assert.deepEqual(none.requests[0]!.model, other);
+	assert.deepEqual(none.requests[0]!.model, quiet(other));
 	await a.call("save-settings", { model: { provider: "fixture", id: "gone" } });
 	const sent = none.requests.length;
 	await assert.rejects(a.call("generate", { prompt: "x" }), /not available/);
@@ -1395,7 +1397,7 @@ test("caption model: null uses the other steps' model; a set one writes the capt
 	for (const request of plain.requests)
 		assert.deepEqual(
 			request.model,
-			cheap,
+			quiet(cheap),
 			"null: the cheap slot for every step",
 		);
 
@@ -1411,7 +1413,7 @@ test("caption model: null uses the other steps' model; a set one writes the capt
 	assert.equal(fills.length, 1);
 	assert.deepEqual(
 		fills[0]!.model,
-		other,
+		quiet(other),
 		"the caption step uses the set model",
 	);
 	const rest = split.requests.filter((request) => !isFill(request));
@@ -1419,7 +1421,7 @@ test("caption model: null uses the other steps' model; a set one writes the capt
 	for (const request of rest)
 		assert.deepEqual(
 			request.model,
-			cheap,
+			quiet(cheap),
 			"the other steps keep the cheap slot",
 		);
 

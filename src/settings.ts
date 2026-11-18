@@ -1,12 +1,6 @@
 /** Settings defaults and validation, shared by the backend (authority) and the
  * settings page (inline validation). */
-import {
-	MEME_MODES,
-	type MemeMode,
-	OWN_MEMES,
-	TONE_SETTINGS,
-	type ToneSetting,
-} from "./config.ts";
+import { MEME_MODES, OWN_MEMES, TONE_SETTINGS } from "./config.ts";
 import type {
 	AutomaticMemes,
 	SearchProvider,
@@ -102,6 +96,73 @@ function range(value: unknown, key: keyof typeof LIMITS): number {
 	return value;
 }
 
+/** Settings that take one of a fixed list of values. */
+const CHOICES: Partial<Record<keyof Settings, readonly string[]>> = {
+	searchProvider: SEARCH_PROVIDERS,
+	mode: MEME_MODES.modes,
+	tone: TONE_SETTINGS,
+	teacherMemes: TEACHER_MEMES,
+	automaticMemes: AUTOMATIC_MEMES,
+};
+/** Text settings: how the value is tidied, and what makes it unacceptable. */
+const TEXTS: Partial<
+	Record<
+		keyof Settings,
+		[(value: string) => string, typeof customFolderProblem]
+	>
+> = {
+	customFolder: [(value) => value.trim(), customFolderProblem],
+	imageBaseUrl: [
+		(value) => value.trim().replace(/\/+$/, ""),
+		imageBaseUrlProblem,
+	],
+};
+const MODELS = new Set(["model", "captionModel", "searchAgent"]);
+const SWITCHES = new Set(["useMemegen", "webSearch"]);
+
+function readModel(value: unknown, key: string) {
+	if (value === null) return null;
+	const model = value as { provider?: unknown; id?: unknown } | undefined;
+	if (
+		!model ||
+		typeof model !== "object" ||
+		typeof model.provider !== "string" ||
+		!model.provider ||
+		typeof model.id !== "string" ||
+		!model.id
+	)
+		throw new Error(`${key} must be {provider, id} or null`);
+	return { provider: model.provider, id: model.id };
+}
+
+function readValue(key: string, value: unknown): unknown {
+	const own = <T extends object>(table: T) =>
+		Object.hasOwn(table, key) ? table[key as keyof T] : undefined;
+	const choices = own(CHOICES);
+	if (choices) {
+		if (!choices.includes(value as string))
+			throw new Error(`${key} must be one of ${choices.join(", ")}`);
+		return value;
+	}
+	if (own(LIMITS)) return range(value, key as keyof typeof LIMITS);
+	if (MODELS.has(key)) return readModel(value, key);
+	if (SWITCHES.has(key)) {
+		if (typeof value !== "boolean")
+			throw new Error(`${key} must be true or false`);
+		return value;
+	}
+	const text = own(TEXTS);
+	if (text) {
+		if (typeof value !== "string") throw new Error(`${key} must be text`);
+		const [tidy, problemOf] = text;
+		const tidied = tidy(value);
+		const problem = problemOf(tidied);
+		if (problem) throw new Error(problem);
+		return tidied;
+	}
+	throw new Error(`Unknown setting: ${key}`);
+}
+
 /** Apply a partial change; unknown keys and invalid values reject the whole patch. */
 export function applySettingsPatch(
 	current: Settings,
@@ -109,112 +170,10 @@ export function applySettingsPatch(
 ): Settings {
 	if (patch === null || typeof patch !== "object" || Array.isArray(patch))
 		throw new Error("Settings change must be an object");
-	const next: Settings = { ...current };
-	for (const [key, value] of Object.entries(patch)) {
-		switch (key) {
-			case "model":
-			case "captionModel": {
-				if (value === null) {
-					next[key] = null;
-					break;
-				}
-				const model = value as { provider?: unknown; id?: unknown } | undefined;
-				if (
-					!model ||
-					typeof model !== "object" ||
-					typeof model.provider !== "string" ||
-					!model.provider ||
-					typeof model.id !== "string" ||
-					!model.id
-				)
-					throw new Error(`${key} must be {provider, id} or null`);
-				next[key] = { provider: model.provider, id: model.id };
-				break;
-			}
-			case "searchAgent": {
-				if (value === null) {
-					next.searchAgent = null;
-					break;
-				}
-				const agent = value as { provider?: unknown; id?: unknown } | undefined;
-				if (
-					!agent ||
-					typeof agent !== "object" ||
-					typeof agent.provider !== "string" ||
-					!agent.provider ||
-					typeof agent.id !== "string" ||
-					!agent.id
-				)
-					throw new Error("searchAgent must be {provider, id} or null");
-				next.searchAgent = { provider: agent.provider, id: agent.id };
-				break;
-			}
-			case "searchProvider":
-				if (!SEARCH_PROVIDERS.includes(value as SearchProvider))
-					throw new Error(
-						`searchProvider must be one of ${SEARCH_PROVIDERS.join(", ")}`,
-					);
-				next.searchProvider = value as SearchProvider;
-				break;
-			case "useMemegen":
-			case "webSearch":
-				if (typeof value !== "boolean")
-					throw new Error(`${key} must be true or false`);
-				next[key] = value;
-				break;
-			case "cooldownDays":
-			case "cooldownGrowth":
-			case "ownMemesShare":
-			case "rejectCooldownDays":
-				next[key] = range(value, key);
-				break;
-			case "customFolder": {
-				if (typeof value !== "string")
-					throw new Error("customFolder must be text");
-				const trimmed = value.trim();
-				const problem = customFolderProblem(trimmed);
-				if (problem) throw new Error(problem);
-				next.customFolder = trimmed;
-				break;
-			}
-			case "imageBaseUrl": {
-				if (typeof value !== "string")
-					throw new Error("imageBaseUrl must be text");
-				const trimmed = value.trim().replace(/\/+$/, "");
-				const problem = imageBaseUrlProblem(trimmed);
-				if (problem) throw new Error(problem);
-				next.imageBaseUrl = trimmed;
-				break;
-			}
-			case "mode":
-				if (!MEME_MODES.modes.includes(value as MemeMode))
-					throw new Error(`mode must be one of ${MEME_MODES.modes.join(", ")}`);
-				next.mode = value as MemeMode;
-				break;
-			case "tone":
-				if (!TONE_SETTINGS.includes(value as ToneSetting))
-					throw new Error(`tone must be one of ${TONE_SETTINGS.join(", ")}`);
-				next.tone = value as ToneSetting;
-				break;
-			case "teacherMemes":
-				if (!TEACHER_MEMES.includes(value as TeacherMemes))
-					throw new Error(
-						`teacherMemes must be one of ${TEACHER_MEMES.join(", ")}`,
-					);
-				next.teacherMemes = value as TeacherMemes;
-				break;
-			case "automaticMemes":
-				if (!AUTOMATIC_MEMES.includes(value as AutomaticMemes))
-					throw new Error(
-						`automaticMemes must be one of ${AUTOMATIC_MEMES.join(", ")}`,
-					);
-				next.automaticMemes = value as AutomaticMemes;
-				break;
-			default:
-				throw new Error(`Unknown setting: ${key}`);
-		}
-	}
-	return next;
+	const next: Record<string, unknown> = { ...current };
+	for (const [key, value] of Object.entries(patch))
+		next[key] = readValue(key, value);
+	return next as unknown as Settings;
 }
 
 /** Stored settings from an older or hand-edited file: keep what is valid, default the rest. */

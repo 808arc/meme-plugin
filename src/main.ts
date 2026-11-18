@@ -70,6 +70,42 @@ const message = (error: unknown) =>
 		? error.message
 		: "Something went wrong.";
 
+/** The meme's image, or null: a missing image is not a failure, the caption still
+ * shows as text. */
+async function fetchImage(
+	ctx: PluginFrontendContext,
+	meme: GeneratedMeme,
+): Promise<MemeImage | null> {
+	if (!meme.meme.hasImage) return null;
+	try {
+		return await ctx.call<MemeImage | null>("get-image", {
+			id: meme.meme.id,
+			lines: meme.lines,
+		});
+	} catch {
+		return null;
+	}
+}
+
+const statusLine = (text: string, failed = false) =>
+	element(
+		"p",
+		failed ? "meme-plugin-status meme-plugin-error" : "meme-plugin-status",
+		text,
+	);
+
+/** A host button in a new slot at the end of `parent`, scoped to `signal`. */
+function button(
+	ctx: PluginFrontendContext,
+	signal: AbortSignal,
+	parent: HTMLElement,
+	props: Parameters<PluginFrontendContext["ui"]["mountButton"]>[1],
+) {
+	const slot = element("span", "");
+	parent.append(slot);
+	return ctx.ui.mountButton(slot, props, { signal });
+}
+
 function mountSurface(
 	ctx: PluginFrontendContext,
 	container: HTMLElement,
@@ -95,20 +131,60 @@ function mountSurface(
 	const fact = element("p", "meme-plugin-fact");
 	const credit = element("p", "meme-plugin-credit");
 	const actions = element("div", "meme-plugin-actions");
-	const anotherSlot = element("span", ""),
-		rejectSlot = element("span", ""),
-		copySlot = element("span", ""),
-		copyImageSlot = element("span", ""),
-		upSlot = element("span", ""),
-		downSlot = element("span", "");
-	actions.append(
-		anotherSlot,
-		rejectSlot,
-		copySlot,
-		copyImageSlot,
-		upSlot,
-		downSlot,
-	);
+	const add = (
+		parent: HTMLElement,
+		props: Parameters<PluginFrontendContext["ui"]["mountButton"]>[1],
+	) => button(ctx, signal, parent, props);
+	const idle = { variant: "ghost", disabled: true } as const;
+	const another = add(actions, {
+		label: "Another meme",
+		variant: "outline",
+		disabled: true,
+		onClick: () => run(),
+	});
+	const reject = add(actions, {
+		label: "Not this one",
+		...idle,
+		onClick: () => run(true),
+	});
+	const copy = add(actions, {
+		label: "Copy caption",
+		...idle,
+		onClick: async () => {
+			if (result)
+				await navigator.clipboard.writeText(
+					result.lines.filter(Boolean).join("\n"),
+				);
+		},
+	});
+	const copyImage = add(actions, {
+		label: "Copy image",
+		...idle,
+		onClick: async () => {
+			if (!result || !image) return;
+			try {
+				const blob = await memePng(result, image);
+				await navigator.clipboard.write([
+					new ClipboardItem({ "image/png": blob }),
+				]);
+			} catch (error) {
+				notice.textContent = `Image not copied. ${message(error)}`;
+			}
+		},
+	});
+	const up = add(actions, {
+		label: "👍",
+		...idle,
+		size: "sm",
+		onClick: () => rate("up"),
+	});
+	const down = add(actions, {
+		label: "👎",
+		...idle,
+		size: "sm",
+		onClick: () => rate("down"),
+	});
+	const memeButtons = [another, reject, copy, copyImage, up, down];
 	const notice = element("p", "meme-plugin-notice");
 	const content = [conceptLine, collapse, fact, credit, actions, notice];
 	if (preset) {
@@ -118,9 +194,6 @@ function mountSurface(
 		let folded: boolean = BUTTONLESS.collapsed;
 		fold.hidden = folded;
 		const bar = element("div", "meme-plugin-actions");
-		const toggleSlot = element("span", ""),
-			dismissSlot = element("span", "");
-		bar.append(toggleSlot, dismissSlot);
 		root.append(
 			heading,
 			element(
@@ -131,24 +204,16 @@ function mountSurface(
 			bar,
 			fold,
 		);
-		const toggle = ctx.ui.mountButton(
-			toggleSlot,
-			{
-				label: folded ? "Show meme" : "Hide meme",
-				variant: "outline",
-				onClick: () => {
-					folded = !folded;
-					fold.hidden = folded;
-					toggle.update({ label: folded ? "Show meme" : "Hide meme" });
-				},
+		const toggle = add(bar, {
+			label: folded ? "Show meme" : "Hide meme",
+			variant: "outline",
+			onClick: () => {
+				folded = !folded;
+				fold.hidden = folded;
+				toggle.update({ label: folded ? "Show meme" : "Hide meme" });
 			},
-			{ signal },
-		);
-		ctx.ui.mountButton(
-			dismissSlot,
-			{ label: "Dismiss", variant: "ghost", onClick: preset.dismiss },
-			{ signal },
-		);
+		});
+		add(bar, { label: "Dismiss", variant: "ghost", onClick: preset.dismiss });
 	} else root.append(heading, ...content);
 	container.append(root);
 
@@ -174,13 +239,7 @@ function mountSurface(
 	};
 	const status = (text: string, failed = false) => {
 		clear();
-		body.append(
-			element(
-				"p",
-				failed ? "meme-plugin-status meme-plugin-error" : "meme-plugin-status",
-				text,
-			),
-		);
+		body.append(statusLine(text, failed));
 	};
 	const paintRating = () => {
 		up.update({ label: rating === "up" ? "👍 Liked" : "👍" });
@@ -220,12 +279,7 @@ function mountSurface(
 		conceptLine.textContent = extra.early
 			? "Before you reveal the question"
 			: concept.prompt;
-		another.update({ disabled: true });
-		reject.update({ disabled: true });
-		copy.update({ disabled: true });
-		copyImage.update({ disabled: true });
-		up.update({ disabled: true });
-		down.update({ disabled: true });
+		for (const each of memeButtons) each.update({ disabled: true });
 		notice.textContent = "";
 		status(STAGES.selecting);
 		// The backend reports each step as it starts; only this request's events count.
@@ -261,19 +315,8 @@ function mountSurface(
 			});
 			done = true;
 			if (stale()) return;
-			let picture: MemeImage | null = null;
-			if (next.meme.hasImage) {
-				// A missing image is not a failure: the caption still shows as text.
-				try {
-					picture = await ctx.call<MemeImage | null>("get-image", {
-						id: next.meme.id,
-						lines: next.lines,
-					});
-				} catch {
-					picture = null;
-				}
-				if (stale()) return;
-			}
+			const picture = await fetchImage(ctx, next);
+			if (stale()) return;
 			show(next, picture);
 			another.update({ disabled: false, label: "Another meme" });
 			reject.update({ disabled: false });
@@ -308,84 +351,6 @@ function mountSurface(
 			notice.textContent = `Rating not saved. ${message(error)}`;
 		}
 	};
-
-	const another = ctx.ui.mountButton(
-		anotherSlot,
-		{
-			label: "Another meme",
-			variant: "outline",
-			disabled: true,
-			onClick: () => run(),
-		},
-		{ signal },
-	);
-	const reject = ctx.ui.mountButton(
-		rejectSlot,
-		{
-			label: "Not this one",
-			variant: "ghost",
-			disabled: true,
-			onClick: () => run(true),
-		},
-		{ signal },
-	);
-	const copy = ctx.ui.mountButton(
-		copySlot,
-		{
-			label: "Copy caption",
-			variant: "ghost",
-			disabled: true,
-			onClick: async () => {
-				if (result)
-					await navigator.clipboard.writeText(
-						result.lines.filter(Boolean).join("\n"),
-					);
-			},
-		},
-		{ signal },
-	);
-	const copyImage = ctx.ui.mountButton(
-		copyImageSlot,
-		{
-			label: "Copy image",
-			variant: "ghost",
-			disabled: true,
-			onClick: async () => {
-				if (!result || !image) return;
-				try {
-					const blob = await memePng(result, image);
-					await navigator.clipboard.write([
-						new ClipboardItem({ "image/png": blob }),
-					]);
-				} catch (error) {
-					notice.textContent = `Image not copied. ${message(error)}`;
-				}
-			},
-		},
-		{ signal },
-	);
-	const up = ctx.ui.mountButton(
-		upSlot,
-		{
-			label: "👍",
-			variant: "ghost",
-			size: "sm",
-			disabled: true,
-			onClick: () => rate("up"),
-		},
-		{ signal },
-	);
-	const down = ctx.ui.mountButton(
-		downSlot,
-		{
-			label: "👎",
-			variant: "ghost",
-			size: "sm",
-			disabled: true,
-			onClick: () => rate("down"),
-		},
-		{ signal },
-	);
 
 	if (preset) {
 		conceptLine.textContent = preset.meme.concept.prompt;
@@ -469,188 +434,164 @@ function settingsRows(
 	keyFound: boolean,
 	save: (patch: Partial<Settings>) => Promise<void>,
 ): PluginSettingsRow[] {
+	/** One row bound to one setting: its current value, saved on change. */
+	const row = (
+		type: PluginSettingsRow["type"],
+		key: keyof Settings,
+		label: string,
+		description: string,
+		extra: Record<string, unknown> = {},
+	) =>
+		({
+			type,
+			key,
+			label,
+			description,
+			value: settings[key],
+			onChange: (value: unknown) => save({ [key]: value }),
+			...extra,
+		}) as PluginSettingsRow;
+	const choices = (pairs: readonly (readonly [string, string])[]) => ({
+		options: pairs.map(([value, label]) => ({ value, label })),
+	});
+	const limited = (key: keyof typeof LIMITS, step: number) => ({
+		...LIMITS[key],
+		step,
+	});
+	const reveal = "After the answer is revealed:";
+	const asked = "When a question is asked:";
 	return [
-		{
-			type: "dropdown",
-			key: "mode",
-			label: "Meme mode",
-			description:
-				"Answer states the fact. Hint points at it without saying it. Think asks you to pick before the answer shows. Shuffle cycles Answer, Hint, Think, one per question; each meme shows its mode. Hint and Think also work before you reveal the question.",
-			value: settings.mode,
-			options: MEME_MODES.modes.map((value) => ({
-				value,
-				label: MEME_MODES.labels[value],
-			})),
-			onChange: (mode) => save({ mode: mode as MemeMode }),
-		},
-		{
-			type: "dropdown",
-			key: "tone",
-			label: "Tone",
-			description:
-				"Gives the caption a comic tone: deadpan, absurd, sarcastic, self-deprecating or playful. Shuffle picks one at random for each meme. The facts and the accuracy rules stay the same.",
-			value: settings.tone,
-			options: TONE_SETTINGS.map((value) => ({
-				value,
-				label: value[0]!.toUpperCase() + value.slice(1),
-			})),
-			onChange: (tone) => save({ tone: tone as Settings["tone"] }),
-		},
-		{
-			type: "number",
-			key: "cooldownDays",
-			label: "Cooldown (days)",
-			description:
-				"A used meme stays out of rotation this long. 0 turns the cooldown off.",
-			value: settings.cooldownDays,
-			...LIMITS.cooldownDays,
-			step: 1,
-			onChange: (cooldownDays) => save({ cooldownDays }),
-		},
-		{
-			type: "number",
-			key: "cooldownGrowth",
-			label: "Cooldown growth",
-			description:
-				"Each further use of the same meme multiplies its cooldown by this factor.",
-			value: settings.cooldownGrowth,
-			...LIMITS.cooldownGrowth,
-			step: 0.5,
-			onChange: (cooldownGrowth) => save({ cooldownGrowth }),
-		},
-		{
-			type: "number",
-			key: "rejectCooldownDays",
-			label: "Minimum cooldown after rejecting (days)",
-			description:
-				"A meme you reject with Not this one stays out at least this long, even when the cooldown is 0.",
-			value: settings.rejectCooldownDays,
-			...LIMITS.rejectCooldownDays,
-			step: 1,
-			onChange: (rejectCooldownDays) => save({ rejectCooldownDays }),
-		},
-		{
-			type: "toggle",
-			key: "webSearch",
-			label: "Search the web for memes",
-			description: `${
+		row(
+			"dropdown",
+			"mode",
+			"Meme mode",
+			"Answer states the fact. Hint points at it without saying it. Think asks you to pick before the answer shows. Shuffle cycles Answer, Hint, Think, one per question; each meme shows its mode. Hint and Think also work before you reveal the question.",
+			choices(
+				MEME_MODES.modes.map((value) => [value, MEME_MODES.labels[value]]),
+			),
+		),
+		row(
+			"dropdown",
+			"tone",
+			"Tone",
+			"Gives the caption a comic tone: deadpan, absurd, sarcastic, self-deprecating or playful. Shuffle picks one at random for each meme. The facts and the accuracy rules stay the same.",
+			choices(
+				TONE_SETTINGS.map((value) => [
+					value,
+					value[0]!.toUpperCase() + value.slice(1),
+				]),
+			),
+		),
+		row(
+			"number",
+			"cooldownDays",
+			"Cooldown (days)",
+			"A used meme stays out of rotation this long. 0 turns the cooldown off.",
+			limited("cooldownDays", 1),
+		),
+		row(
+			"number",
+			"cooldownGrowth",
+			"Cooldown growth",
+			"Each further use of the same meme multiplies its cooldown by this factor.",
+			limited("cooldownGrowth", 0.5),
+		),
+		row(
+			"number",
+			"rejectCooldownDays",
+			"Minimum cooldown after rejecting (days)",
+			"A meme you reject with Not this one stays out at least this long, even when the cooldown is 0.",
+			limited("rejectCooldownDays", 1),
+		),
+		row(
+			"toggle",
+			"webSearch",
+			"Search the web for memes",
+			`${
 				settings.webSearch &&
 				settings.searchProvider === "none" &&
 				!settings.searchAgent
 					? "On, but needs a search provider: choose one below. Until then nothing is searched. "
 					: ""
 			}Before generating, look for an existing meme on the web through the search provider below. The concept is sent to that provider. Off: local sources and generation only.`,
-			value: settings.webSearch,
-			onChange: (webSearch) => save({ webSearch }),
-		},
-		{
-			type: "dropdown",
-			key: "searchProvider",
-			label: "Search provider",
-			description: `${
+		),
+		row(
+			"dropdown",
+			"searchProvider",
+			"Search provider",
+			`${
 				settings.searchProvider === "tavily" && !keyFound
 					? "TAVILY_API_KEY is not set in the environment: nothing is searched. "
 					: ""
 			}Tavily sends the concept to Tavily, which reports no licence, so its results are currently filtered out. Key: the TAVILY_API_KEY environment variable only.`,
-			value: settings.searchProvider,
-			options: [
-				{ value: "none", label: "None" },
-				{ value: "tavily", label: "Tavily" },
-			],
-			onChange: (searchProvider) =>
-				save({ searchProvider: searchProvider as Settings["searchProvider"] }),
-		},
-		{
-			type: "toggle",
-			key: "useMemegen",
-			label: "Use the bundled catalogue",
-			description: `${bundled || "About 200"} classic image memes from the open-source memegen project.`,
-			value: settings.useMemegen,
-			onChange: (useMemegen) => save({ useMemegen }),
-		},
-		{
-			type: "dropdown",
-			key: "teacherMemes",
-			label: "Teacher memes (experimental)",
-			description: `In teaching sessions the teacher may put a meme in the chat, at most one per ${TEACHER_TOOL.turnsPerMeme} teacher turns and ${TEACHER_TOOL.automaticMemesPerDay} a day. It is told to wait until you have tried the question, but this is not yet enforced by LearnHarness.`,
-			value: settings.teacherMemes,
-			options: [
-				{ value: "off", label: "Off" },
-				{ value: "teacher", label: "Teacher decides" },
-				{ value: "wrong", label: "After wrong answers" },
-				{
-					value: "shuffle",
-					label: "Shuffle: teacher decides or after wrong answers, per turn",
-				},
-			],
-			onChange: (value) =>
-				save({ teacherMemes: value as Settings["teacherMemes"] }),
-		},
-		{
-			type: "dropdown",
-			key: "automaticMemes",
-			label: "Automatic memes",
-			description: `A meme opens over the page on its own, folded to one line; Dismiss closes it. "When a question is asked" uses Hint or Think and never shows the answer. Each counts toward the ${TEACHER_TOOL.automaticMemesPerDay} automatic memes a day shared with teacher memes.`,
-			value: settings.automaticMemes,
-			options: [
-				{ value: "off", label: "Off" },
-				{
-					value: "every",
-					label: "After the answer is revealed: every question",
-				},
-				{
-					value: "nth",
-					label: `After the answer is revealed: every ${ordinal(BUTTONLESS.everyNth)} question`,
-				},
-				{
-					value: "wrong",
-					label: "After the answer is revealed: only wrong answers",
-				},
-				{ value: "asked", label: "When a question is asked: every question" },
-				{
-					value: "asked-nth",
-					label: `When a question is asked: every ${ordinal(CHAT_MEMES.askedNth)} question`,
-				},
-				{
-					value: "shuffle",
-					label: "Shuffle: one of the above, per question",
-				},
-			],
-			onChange: (value) =>
-				save({ automaticMemes: value as Settings["automaticMemes"] }),
-		},
-		{
-			type: "text",
-			key: "imageBaseUrl",
-			label: "Image server",
-			description:
-				"This server draws the caption onto catalogue memes, so the meme's id and its caption lines are sent here (never your question). Point it at a self-hosted memegen to keep captions on your machine. Your own memes are not sent. Leave empty to show captions without images.",
-			value: settings.imageBaseUrl,
-			validate: (value) =>
-				imageBaseUrlProblem(value.trim().replace(/\/+$/, "")),
-			onChange: (imageBaseUrl) => save({ imageBaseUrl }),
-		},
-		{
-			type: "slider",
-			key: "ownMemesShare",
-			label: "Own memes first (%)",
-			description:
-				"Chance a meme comes from your own memes while one is out of cooldown. 100: always, then the catalogue.",
-			value: settings.ownMemesShare,
-			...LIMITS.ownMemesShare,
-			step: 5,
-			onChange: (ownMemesShare) => save({ ownMemesShare }),
-		},
-		{
-			type: "text",
-			key: "customFolder",
-			label: "Custom memes folder",
-			description:
-				"Folder with custom-memes.json and custom-images/. Only read, never changed. Leave empty for the plugin's data folder.",
-			value: settings.customFolder,
-			validate: (value) => customFolderProblem(value.trim()),
-			onChange: (customFolder) => save({ customFolder }),
-		},
+			choices([
+				["none", "None"],
+				["tavily", "Tavily"],
+			]),
+		),
+		row(
+			"toggle",
+			"useMemegen",
+			"Use the bundled catalogue",
+			`${bundled || "About 200"} classic image memes from the open-source memegen project.`,
+		),
+		row(
+			"dropdown",
+			"teacherMemes",
+			"Teacher memes (experimental)",
+			`In teaching sessions the teacher may put a meme in the chat, at most one per ${TEACHER_TOOL.turnsPerMeme} teacher turns and ${TEACHER_TOOL.automaticMemesPerDay} a day. It is told to wait until you have tried the question, but this is not yet enforced by LearnHarness.`,
+			choices([
+				["off", "Off"],
+				["teacher", "Teacher decides"],
+				["wrong", "After wrong answers"],
+				[
+					"shuffle",
+					"Shuffle: teacher decides or after wrong answers, per turn",
+				],
+			]),
+		),
+		row(
+			"dropdown",
+			"automaticMemes",
+			"Automatic memes",
+			`A meme opens over the page on its own, folded to one line; Dismiss closes it. "When a question is asked" uses Hint or Think and never shows the answer. Each counts toward the ${TEACHER_TOOL.automaticMemesPerDay} automatic memes a day shared with teacher memes.`,
+			choices([
+				["off", "Off"],
+				["every", `${reveal} every question`],
+				["nth", `${reveal} every ${ordinal(BUTTONLESS.everyNth)} question`],
+				["wrong", `${reveal} only wrong answers`],
+				["asked", `${asked} every question`],
+				[
+					"asked-nth",
+					`${asked} every ${ordinal(CHAT_MEMES.askedNth)} question`,
+				],
+				["shuffle", "Shuffle: one of the above, per question"],
+			]),
+		),
+		row(
+			"text",
+			"imageBaseUrl",
+			"Image server",
+			"This server draws the caption onto catalogue memes, so the meme's id and its caption lines are sent here (never your question). Point it at a self-hosted memegen to keep captions on your machine. Your own memes are not sent. Leave empty to show captions without images.",
+			{
+				validate: (value: string) =>
+					imageBaseUrlProblem(value.trim().replace(/\/+$/, "")),
+			},
+		),
+		row(
+			"slider",
+			"ownMemesShare",
+			"Own memes first (%)",
+			"Chance a meme comes from your own memes while one is out of cooldown. 100: always, then the catalogue.",
+			limited("ownMemesShare", 5),
+		),
+		row(
+			"text",
+			"customFolder",
+			"Custom memes folder",
+			"Folder with custom-memes.json and custom-images/. Only read, never changed. Leave empty for the plugin's data folder.",
+			{ validate: (value: string) => customFolderProblem(value.trim()) },
+		),
 	];
 }
 
@@ -676,55 +617,76 @@ function mountSettings(
 		if (signal.aborted) return;
 		loading.remove();
 
-		const modelRow = element("div", "meme-plugin-settings-model");
-		const pickerSlot = element("span", ""),
-			defaultSlot = element("span", "");
-		modelRow.append(pickerSlot, defaultSlot);
-		// #36: the caption step only; null uses the Model above (or the cheap slot).
-		const captionRow = element("div", "meme-plugin-settings-model");
-		const captionPickerSlot = element("span", ""),
-			captionDefaultSlot = element("span", "");
-		captionRow.append(captionPickerSlot, captionDefaultSlot);
-		const searchRow = element("div", "meme-plugin-settings-model");
-		const searchSlot = element("span", "");
-		searchRow.append(searchSlot);
-		const rowsSlot = element("div", "");
-		const summary = element("p", "meme-plugin-settings-note");
-		const budget = element("p", "meme-plugin-settings-note");
-		const resetSlot = element("div", "");
-		const exportSlot = element("div", "");
-		const exported = element("p", "meme-plugin-settings-note");
-		const problems = element("ul", "meme-plugin-settings-problems");
-		root.append(
-			element("p", "meme-plugin-settings-label", "Model"),
-			element(
-				"p",
-				"meme-plugin-settings-note",
-				"Writes the captions. Each meme costs one or two short requests. Default: the cheap model slot.",
-			),
-			modelRow,
-			element("p", "meme-plugin-settings-label", "Caption model"),
-			element(
-				"p",
-				"meme-plugin-settings-note",
-				"Writes the caption text only. Default: the Model above, or the cheap slot. Picking the meme and checking the fact keep the Model above.",
-			),
-			captionRow,
-			element("p", "meme-plugin-settings-label", "Search agent"),
-			element(
-				"p",
-				"meme-plugin-settings-note",
-				"Looks for existing memes when web search is on. Pick the model and provider you trust with your questions. Without one, no search runs.",
-			),
-			searchRow,
-			rowsSlot,
-			summary,
-			budget,
-			resetSlot,
-			exportSlot,
-			exported,
-			problems,
+		const note = (text: string) =>
+			element("p", "meme-plugin-settings-note", text);
+		const add = (
+			parent: HTMLElement,
+			props: Parameters<PluginFrontendContext["ui"]["mountButton"]>[1],
+		) => button(ctx, signal, parent, props);
+		/** A labelled model picker that saves `key`; an optional reset button beside it. */
+		const modelRow = (
+			label: string,
+			text: string,
+			key: "model" | "captionModel" | "searchAgent",
+			reset?: string,
+		) => {
+			const row = element("div", "meme-plugin-settings-model");
+			const slot = element("span", "");
+			row.append(slot);
+			root.append(
+				element("p", "meme-plugin-settings-label", label),
+				note(text),
+				row,
+			);
+			const picker = ctx.ui.mountModelPicker(
+				slot,
+				{
+					value: undefined,
+					onChange: (model) =>
+						save({ [key]: { provider: model.provider, id: model.id } }),
+				},
+				{ signal },
+			);
+			const clear =
+				reset === undefined
+					? null
+					: add(row, {
+							label: reset,
+							variant: "outline",
+							size: "sm",
+							onClick: () => save({ [key]: null }),
+						});
+			return (settings: Settings) => {
+				picker.update({ value: settings[key] ?? undefined });
+				clear?.update({ disabled: !settings[key] });
+			};
+		};
+		const paintModel = modelRow(
+			"Model",
+			"Writes the captions. Each meme costs one or two short requests. Default: the cheap model slot.",
+			"model",
+			"Use cheap slot",
 		);
+		// #36: the caption step only; null uses the Model above (or the cheap slot).
+		const paintCaption = modelRow(
+			"Caption model",
+			"Writes the caption text only. Default: the Model above, or the cheap slot. Picking the meme and checking the fact keep the Model above.",
+			"captionModel",
+			"Use default",
+		);
+		const paintSearch = modelRow(
+			"Search agent",
+			"Looks for existing memes when web search is on. Pick the model and provider you trust with your questions. Without one, no search runs.",
+			"searchAgent",
+		);
+		const rowsSlot = element("div", "");
+		const summary = note("");
+		const budget = note("");
+		const exported = note("");
+		const problems = element("ul", "meme-plugin-settings-problems");
+		root.append(rowsSlot, summary, budget);
+		const tools = element("div", "");
+		root.append(tools, exported, problems);
 
 		// Publish values only after the backend accepted and stored them.
 		const publish = (next: PluginState) => {
@@ -736,19 +698,9 @@ function mountSettings(
 			budget.textContent = spent
 				? "Today's automatic memes are used up; none appear on their own until tomorrow. Meme this still works."
 				: "";
-			picker.update({ value: state.settings.model ?? undefined });
-			captionPicker.update({ value: state.settings.captionModel ?? undefined });
-			captionDefault.update({ disabled: !state.settings.captionModel });
-			searchPicker.update({ value: state.settings.searchAgent ?? undefined });
-			useDefault.update({ disabled: !state.settings.model });
-			rows.update({
-				rows: settingsRows(
-					state.settings,
-					state.pool.memegen,
-					state.searchKeyFound,
-					save,
-				),
-			});
+			for (const paint of [paintModel, paintCaption, paintSearch])
+				paint(state.settings);
+			rows.update({ rows: rowsFor(state) });
 			summary.textContent = `Pool: ${state.pool.memegen} bundled and ${state.pool.custom} custom memes, ${state.pool.coolingDown} cooling down. Custom memes are read from ${state.customFolder}.`;
 			problems.replaceChildren(
 				...state.problems.map((problem) => element("li", "", problem)),
@@ -757,96 +709,40 @@ function mountSettings(
 		const save = async (patch: Partial<Settings>) =>
 			publish(await ctx.call<PluginState>("save-settings", patch));
 
-		const picker = ctx.ui.mountModelPicker(
-			pickerSlot,
-			{
-				value: undefined,
-				onChange: (model) =>
-					save({ model: { provider: model.provider, id: model.id } }),
-			},
-			{ signal },
-		);
-		const captionPicker = ctx.ui.mountModelPicker(
-			captionPickerSlot,
-			{
-				value: undefined,
-				onChange: (model) =>
-					save({ captionModel: { provider: model.provider, id: model.id } }),
-			},
-			{ signal },
-		);
-		const captionDefault = ctx.ui.mountButton(
-			captionDefaultSlot,
-			{
-				label: "Use default",
-				variant: "outline",
-				size: "sm",
-				onClick: () => save({ captionModel: null }),
-			},
-			{ signal },
-		);
-		const searchPicker = ctx.ui.mountModelPicker(
-			searchSlot,
-			{
-				value: undefined,
-				onChange: (model) =>
-					save({ searchAgent: { provider: model.provider, id: model.id } }),
-			},
-			{ signal },
-		);
-		const useDefault = ctx.ui.mountButton(
-			defaultSlot,
-			{
-				label: "Use cheap slot",
-				variant: "outline",
-				size: "sm",
-				onClick: () => save({ model: null }),
-			},
-			{ signal },
-		);
+		const rowsFor = (current: PluginState) =>
+			settingsRows(
+				current.settings,
+				current.pool.memegen,
+				current.searchKeyFound,
+				save,
+			);
 		const rows = ctx.ui.mountSettingsRows(
 			rowsSlot,
-			{
-				rows: settingsRows(
-					state.settings,
-					state.pool.memegen,
-					state.searchKeyFound,
-					save,
-				),
-			},
+			{ rows: rowsFor(state) },
 			{ signal },
 		);
-		ctx.ui.mountButton(
-			resetSlot,
-			{
-				label: "Reset cooldowns",
-				variant: "outline",
-				size: "sm",
-				onClick: async () =>
-					publish(await ctx.call<PluginState>("reset-usage")),
-			},
-			{ signal },
-		);
+		add(tools, {
+			label: "Reset cooldowns",
+			variant: "outline",
+			size: "sm",
+			onClick: async () => publish(await ctx.call<PluginState>("reset-usage")),
+		});
 		// No save dialog in the plugin API: the copy goes under data/exports/ and the
 		// path is shown so the learner can move it.
-		ctx.ui.mountButton(
-			exportSlot,
-			{
-				label: "Export my memes",
-				variant: "outline",
-				size: "sm",
-				onClick: async () => {
-					try {
-						const result = await ctx.call<MemeExport>("export-memes");
-						if (!signal.aborted)
-							exported.textContent = `Exported custom-memes.json and ${result.images} images to ${result.path}`;
-					} catch (error) {
-						if (!signal.aborted) exported.textContent = message(error);
-					}
-				},
+		add(tools, {
+			label: "Export my memes",
+			variant: "outline",
+			size: "sm",
+			onClick: async () => {
+				try {
+					const result = await ctx.call<MemeExport>("export-memes");
+					if (!signal.aborted)
+						exported.textContent = `Exported custom-memes.json and ${result.images} images to ${result.path}`;
+				} catch (error) {
+					if (!signal.aborted) exported.textContent = message(error);
+				}
 			},
-			{ signal },
-		);
+		});
 		publish(state);
 	})();
 
@@ -862,13 +758,7 @@ function mountTeacherMeme(
 	const root = element("div", "meme-plugin-tool");
 	container.append(root);
 	const note = (text: string, failed = false) =>
-		root.replaceChildren(
-			element(
-				"p",
-				failed ? "meme-plugin-status meme-plugin-error" : "meme-plugin-status",
-				text,
-			),
-		);
+		root.replaceChildren(statusLine(text, failed));
 	if (tool.state === "output-error") {
 		note(tool.errorText || "The meme could not be made.", true);
 		return () => root.remove();
@@ -890,15 +780,7 @@ function mountTeacherMeme(
 		unmount = mountMeme(root, result, image);
 		root.append(element("p", "meme-plugin-fact", result.fact));
 	};
-	if (result.meme.hasImage) {
-		// A missing image is not a failure: the caption still shows as text.
-		ctx
-			.call<MemeImage | null>("get-image", {
-				id: result.meme.id,
-				lines: result.lines,
-			})
-			.then(show, () => show(null));
-	} else show(null);
+	void fetchImage(ctx, result).then(show);
 	return () => {
 		unmount?.();
 		root.remove();
@@ -983,16 +865,7 @@ export function activate(ctx: PluginFrontendContext): void {
 			return; // Automatic: a failure stays quiet; Meme this still works.
 		}
 		if (result.status !== "meme" || ctx.signal.aborted || open) return;
-		let image: MemeImage | null = null;
-		if (result.meme.meme.hasImage)
-			try {
-				image = await ctx.call<MemeImage | null>("get-image", {
-					id: result.meme.meme.id,
-					lines: result.meme.lines,
-				});
-			} catch {
-				image = null;
-			}
+		const image = await fetchImage(ctx, result.meme);
 		if (ctx.signal.aborted || open) return;
 		try {
 			openMeme(

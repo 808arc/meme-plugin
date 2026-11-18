@@ -186,6 +186,14 @@ function chatKey(input: unknown): string {
 	return typeof id === "string" ? id.slice(0, 200) : "";
 }
 
+/** A string input, or null. */
+const text = (value: unknown) => (typeof value === "string" ? value : null);
+/** A non-negative whole number, or 0. */
+const count = (value: unknown) =>
+	typeof value === "number" && Number.isInteger(value) && value >= 0
+		? value
+		: 0;
+
 function object(value: unknown): Record<string, unknown> {
 	if (value === null || typeof value !== "object" || Array.isArray(value))
 		throw new Error("Expected an operation input object.");
@@ -243,34 +251,18 @@ function readState(file: string): Stored {
 
 function readButtonless(value: unknown): Stored["buttonless"] {
 	const item = value as Partial<Stored["buttonless"]> | null | undefined;
-	const revealed = item?.revealed;
 	return {
 		seen: Array.isArray(item?.seen)
 			? item.seen.filter((key): key is string => typeof key === "string")
 			: [],
-		revealed:
-			typeof revealed === "number" &&
-			Number.isInteger(revealed) &&
-			revealed >= 0
-				? revealed
-				: 0,
-		asked:
-			typeof item?.asked === "number" &&
-			Number.isInteger(item.asked) &&
-			item.asked >= 0
-				? item.asked
-				: 0,
+		revealed: count(item?.revealed),
+		asked: count(item?.asked),
 	};
 }
 
 function readAutomatic(value: unknown): Stored["automatic"] {
 	const item = value as Partial<Stored["automatic"]> | null | undefined;
-	return item &&
-		typeof item.day === "string" &&
-		Number.isInteger(item.count) &&
-		item.count! >= 0
-		? { day: item.day, count: item.count! }
-		: { day: "", count: 0 };
+	return { day: text(item?.day) ?? "", count: count(item?.count) };
 }
 
 export interface BackendOptions {
@@ -401,24 +393,19 @@ export function activate(
 			throw new Error(
 				"Choose a model in the Meme plugin settings, or configure the cheap model slot.",
 			);
-		if (
-			!catalog.models.some(
-				(model) =>
-					model.provider === pin.model.provider && model.id === pin.model.id,
-			)
-		)
+		const entry = catalog.models.find(
+			(model) =>
+				model.provider === pin.model.provider && model.id === pin.model.id,
+		);
+		if (!entry)
 			throw new Error(
 				"The selected meme model is not available. Choose a configured model in the Meme plugin settings.",
 			);
 		// Captions and checks are short: reasoning only adds latency. Off when the model
 		// offers it; otherwise the host's level applies.
-		const offered = catalog.models
-			.find(
-				(model) =>
-					model.provider === pin.model.provider && model.id === pin.model.id,
-			)
-			?.supportedLevels.includes("off");
-		const thinkingLevel = offered ? "off" : pin.thinkingLevel;
+		const thinkingLevel = entry.supportedLevels.includes("off")
+			? "off"
+			: pin.thinkingLevel;
 		return { ...pin.model, ...(thinkingLevel ? { thinkingLevel } : {}) };
 	}
 
@@ -556,21 +543,25 @@ export function activate(
 
 	/** Start drawing a catalogue meme on the image server, so the page's get-image finds
 	 * it cached or in flight. Best effort: a failure here is retried by get-image. */
-	const prefetchRendered = (meme: Meme, lines: readonly string[]) => {
-		if (meme.origin !== "memegen") return;
-		const url = renderedImageUrl(
-			state.settings.imageBaseUrl,
-			meme.id,
-			lines,
-			meme.caption.length,
+	const loadRendered = async (meme: Meme, lines: readonly string[]) => {
+		const url =
+			meme.origin === "memegen" &&
+			renderedImageUrl(
+				state.settings.imageBaseUrl,
+				meme.id,
+				lines,
+				meme.caption.length,
+			);
+		if (!url) return null;
+		const image = await loadImage(
+			{ image: url, origin: "memegen" },
+			ctx.dataDirectory,
+			ctx.signal,
 		);
-		if (url)
-			loadImage(
-				{ image: url, origin: "memegen" },
-				ctx.dataDirectory,
-				ctx.signal,
-			).catch(() => {});
+		return image && { ...image, rendered: true as const };
 	};
+	const prefetchRendered = (meme: Meme, lines: readonly string[]) =>
+		void loadRendered(meme, lines).catch(() => {});
 
 	/** "Once used, store it": start or extend the meme's cooldown. */
 	const markUsed = (id: string) =>
@@ -1016,8 +1007,11 @@ export function activate(
 
 	// Teacher tool and instructions exist only while the setting is on; changes apply to future turns.
 	let teacherRelease: (() => void)[] = [];
-	const syncTeacherTool = () => {
+	const releaseTeacher = () => {
 		for (const release of teacherRelease.splice(0)) release();
+	};
+	const syncTeacherTool = () => {
+		releaseTeacher();
 		const mode = state.settings.teacherMemes;
 		if (disposed || mode === "off") return;
 		teacherRelease = [
@@ -1051,9 +1045,7 @@ export function activate(
 	syncTeacherTool();
 
 	const unregister = [
-		() => {
-			for (const release of teacherRelease.splice(0)) release();
-		},
+		releaseTeacher,
 		ctx.handle("get-state", (input) => {
 			alive();
 			return view(chatKey(input));
@@ -1078,16 +1070,15 @@ export function activate(
 		}),
 		// The window closed or moved on: stop its chain so it costs nothing more.
 		ctx.handle("cancel", (input) => {
-			const requestId = object(input).requestId;
-			if (typeof requestId === "string" && chain?.requestId === requestId)
-				chain.controller.abort();
+			const requestId = text(object(input).requestId);
+			if (requestId && chain?.requestId === requestId) chain.controller.abort();
 			return null;
 		}),
 		ctx.handle("generate", (input) => {
-			const requestId = object(input).requestId;
+			const requestId = text(object(input).requestId);
 			return guarded(
 				async () => {
-					stageFor = typeof requestId === "string" ? requestId : null;
+					stageFor = requestId;
 					const chat = chatKey(input);
 					const setting = state.settings.mode;
 					const position = shufflePosition.get(chat) ?? 0;
@@ -1109,10 +1100,7 @@ export function activate(
 						stageFor = null;
 					}
 				},
-				{
-					supersede: true,
-					requestId: typeof requestId === "string" ? requestId : null,
-				},
+				{ supersede: true, requestId },
 			);
 		}),
 		ctx.handle("rate", (input) => {
@@ -1130,7 +1118,7 @@ export function activate(
 		ctx.handle("auto-meme", async (input): Promise<AutomaticResult> => {
 			alive();
 			const value = object(input);
-			const key = typeof value.key === "string" ? value.key : "";
+			const key = text(value.key) ?? "";
 			if (!key || key.length > 1000)
 				throw new Error("An automatic meme needs a question key.");
 			// Shuffle: the trigger for this question, the same on its asked and reveal checks.
@@ -1167,32 +1155,19 @@ export function activate(
 				return { status: "skipped" };
 			if (!budgetLeft()) return { status: "budget" };
 			// Not asked for by the learner: background work, like the teacher tool.
+			const { prompt, context, options } = value;
 			const meme = await guarded(() =>
-				asked
-					? generate(
-							{
-								prompt: value.prompt,
-								...(value.context !== undefined
-									? { context: value.context }
-									: {}),
-								early: true,
-								...(value.options !== undefined
-									? { options: value.options }
-									: {}),
-							},
-							"background",
-							askedMode(state.settings.mode),
-						)
-					: generate(
-							{
-								prompt: value.prompt,
-								...(value.context !== undefined
-									? { context: value.context }
-									: {}),
-							},
-							"background",
-							"answer",
-						),
+				generate(
+					{
+						prompt,
+						...(context !== undefined ? { context } : {}),
+						...(asked
+							? { early: true, ...(options !== undefined ? { options } : {}) }
+							: {}),
+					},
+					"background",
+					asked ? askedMode(state.settings.mode) : "answer",
+				),
 			);
 			spendAutomatic();
 			return { status: "meme", meme };
@@ -1209,27 +1184,11 @@ export function activate(
 			// Vellum skill: the image server draws the caption. Catalogue memes only; a
 			// failure falls back to the blank image, which the page captions itself.
 			const lines = readLines(object(input).lines);
-			const rendered =
-				lines && meme.origin === "memegen"
-					? renderedImageUrl(
-							state.settings.imageBaseUrl,
-							meme.id,
-							lines,
-							meme.caption.length,
-						)
-					: undefined;
-			if (rendered)
-				try {
-					const image = await loadImage(
-						{ image: rendered, origin: "memegen" },
-						ctx.dataDirectory,
-						ctx.signal,
-					);
-					alive();
-					if (image) return { ...image, rendered: true };
-				} catch {
-					alive();
-				}
+			const rendered = lines
+				? await loadRendered(meme, lines).catch(() => null)
+				: null;
+			alive();
+			if (rendered) return rendered;
 			const image = await loadImage(
 				meme,
 				ctx.dataDirectory,

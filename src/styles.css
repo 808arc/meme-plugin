@@ -102,16 +102,6 @@
 	text-align: center;
 	overflow-wrap: anywhere;
 }
-.meme-plugin-credit {
-	margin: 0;
-	font-size: 0.8125rem;
-	opacity: 0.7;
-	text-align: center;
-}
-.meme-plugin-credit a {
-	color: inherit;
-	text-decoration: underline;
-}
 .meme-plugin-actions {
 	display: flex;
 	flex-wrap: wrap;

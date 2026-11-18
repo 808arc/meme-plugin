@@ -93,7 +93,6 @@ function mountSurface(
 	const body = element("div", "meme-plugin-body");
 	collapse.append(collapseTitle, body);
 	const fact = element("p", "meme-plugin-fact");
-	const credit = element("p", "meme-plugin-credit");
 	const actions = element("div", "meme-plugin-actions");
 	const anotherSlot = element("span", ""),
 		rejectSlot = element("span", ""),
@@ -110,7 +109,7 @@ function mountSurface(
 		downSlot,
 	);
 	const notice = element("p", "meme-plugin-notice");
-	const content = [conceptLine, collapse, fact, credit, actions, notice];
+	const content = [conceptLine, collapse, fact, actions, notice];
 	if (preset) {
 		// Folded to one line until the learner expands it; Dismiss closes the surface.
 		const fold = element("div", "meme-plugin-fold");
@@ -170,7 +169,6 @@ function mountSurface(
 		unmountMeme = null;
 		body.replaceChildren();
 		fact.textContent = "";
-		credit.replaceChildren();
 	};
 	const status = (text: string, failed = false) => {
 		clear();
@@ -198,15 +196,6 @@ function mountSurface(
 				: next.mode
 					? `${MEME_MODES.labels[next.mode]}: ${next.fact}`
 					: next.fact;
-		credit.append(`Meme: ${next.meme.name}`);
-		if (next.meme.credit) credit.append(` · Credit: ${next.meme.credit}`);
-		if (next.meme.source && /^https?:\/\//.test(next.meme.source)) {
-			const link = element("a", "", "about this meme");
-			link.href = next.meme.source;
-			link.target = "_blank";
-			link.rel = "noopener noreferrer";
-			credit.append(" · ", link);
-		}
 		notice.textContent = "";
 		paintRating();
 	};

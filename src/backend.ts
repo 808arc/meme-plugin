@@ -410,10 +410,16 @@ export function activate(
 			throw new Error(
 				"The selected meme model is not available. Choose a configured model in the Meme plugin settings.",
 			);
-		return {
-			...pin.model,
-			...(pin.thinkingLevel ? { thinkingLevel: pin.thinkingLevel } : {}),
-		};
+		// Captions and checks are short: reasoning only adds latency. Off when the model
+		// offers it; otherwise the host's level applies.
+		const offered = catalog.models
+			.find(
+				(model) =>
+					model.provider === pin.model.provider && model.id === pin.model.id,
+			)
+			?.supportedLevels.includes("off");
+		const thinkingLevel = offered ? "off" : pin.thinkingLevel;
+		return { ...pin.model, ...(thinkingLevel ? { thinkingLevel } : {}) };
 	}
 
 	/** One model exchange that must end in JSON accepted by `parse`. The model gets a
@@ -608,97 +614,82 @@ export function activate(
 			() => timer.abort(new Error("The web search took too long.")),
 			options.searchTimeoutMs ?? WEB_SEARCH.timeoutMs,
 		);
+		const budget = AbortSignal.any([chainSignal(), timer.signal]);
 		try {
-			return await searchWithin(
-				AbortSignal.any([chainSignal(), timer.signal]),
-				agent,
-				purpose,
-				concept,
-				exclude,
+			let hits: SearchHit[];
+			try {
+				hits = await searchCandidates(agent, concept, budget);
+			} catch (error) {
+				alive();
+				if (!budget.aborted) throw error;
+				return null;
+			}
+			alive();
+			const found = hits
+				.map((hit) => ({ hit, meme: webMeme(hit) }))
+				.filter(({ meme }) => meme.id !== exclude);
+			if (!found.length) return null;
+			let model: PluginModelSpec;
+			try {
+				model = await resolveModel();
+			} catch {
+				alive();
+				return null;
+			}
+			// All hits are judged at once (at most WEB_SEARCH.maxJudged): one model wait, not
+			// one per hit. The first acceptable hit in search order wins.
+			const matches = await Promise.all(
+				found.map(async ({ hit }) => {
+					try {
+						return verdict(
+							hit,
+							await ask(
+								purpose,
+								model,
+								judgeRequest(hit, concept),
+								parseJudgement,
+								budget,
+							),
+						);
+					} catch {
+						return null;
+					}
+				}),
 			);
+			alive();
+			for (const [index, { meme }] of found.entries()) {
+				const match = matches[index];
+				if (!match || budget.aborted) continue;
+				// Never show a credit-only card: the image must load before the meme is offered.
+				try {
+					await loadImage(meme, ctx.dataDirectory, budget);
+				} catch {
+					alive();
+					continue;
+				}
+				webFound.clear();
+				webFound.set(meme.id, meme);
+				return {
+					meme: {
+						id: meme.id,
+						origin: "web",
+						name: meme.name,
+						source: meme.source,
+						credit: meme.credit,
+						boxes: [],
+						hasImage: true,
+					},
+					webMatch: match,
+					concept,
+					originalCaption: [],
+					lines: [],
+					fact: "",
+				};
+			}
+			return null;
 		} finally {
 			clearTimeout(timeout);
 		}
-	}
-
-	async function searchWithin(
-		budget: AbortSignal,
-		agent: SearchAgent,
-		purpose: PluginCallPurpose,
-		concept: Concept,
-		exclude: string | undefined,
-	): Promise<GeneratedMeme | null> {
-		let hits: SearchHit[];
-		try {
-			hits = await searchCandidates(agent, concept, budget);
-		} catch (error) {
-			alive();
-			if (!budget.aborted) throw error;
-			return null;
-		}
-		alive();
-		const found = hits
-			.map((hit) => ({ hit, meme: webMeme(hit) }))
-			.filter(({ meme }) => meme.id !== exclude);
-		if (!found.length) return null;
-		let model: PluginModelSpec;
-		try {
-			model = await resolveModel();
-		} catch {
-			alive();
-			return null;
-		}
-		// All hits are judged at once (at most WEB_SEARCH.maxJudged): one model wait, not
-		// one per hit. The first acceptable hit in search order wins.
-		const matches = await Promise.all(
-			found.map(async ({ hit }) => {
-				try {
-					return verdict(
-						hit,
-						await ask(
-							purpose,
-							model,
-							judgeRequest(hit, concept),
-							parseJudgement,
-							budget,
-						),
-					);
-				} catch {
-					return null;
-				}
-			}),
-		);
-		alive();
-		for (const [index, { meme }] of found.entries()) {
-			const match = matches[index];
-			if (!match || budget.aborted) continue;
-			// Never show a credit-only card: the image must load before the meme is offered.
-			try {
-				await loadImage(meme, ctx.dataDirectory, budget);
-			} catch {
-				alive();
-				continue;
-			}
-			webFound.clear();
-			webFound.set(meme.id, meme);
-			return {
-				meme: {
-					id: meme.id,
-					origin: "web",
-					name: meme.name,
-					source: meme.source,
-					credit: meme.credit,
-					boxes: [],
-					hasImage: true,
-				},
-				webMatch: match,
-				concept,
-				originalCaption: [],
-				lines: [],
-				fact: "",
-			};
-		}
-		return null;
 	}
 
 	/** #17/#32: a meme records its mode unless it is a plain Answer meme. */

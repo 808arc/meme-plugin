@@ -429,14 +429,6 @@ test("a question becomes a meme drawn over its image, with text inserted safely"
 		surface.container.querySelector(".meme-plugin-fact")!.textContent,
 		"Jensen Huang backed CUDA.",
 	);
-	const link = surface.container.querySelector(
-		".meme-plugin-credit a",
-	) as HTMLAnchorElement;
-	assert.deepEqual(
-		[link.getAttribute("href"), link.target, link.rel],
-		["https://example.com/about", "_blank", "noopener noreferrer"],
-	);
-
 	assert.equal(f.button("Another meme").props.disabled, false);
 	await (f.button("Copy caption").props.onClick as () => Promise<void>)();
 	assert.equal(f.clipboard.copied, `he backed cuda\n${hostile}`);

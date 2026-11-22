@@ -78,8 +78,9 @@ export const WEB_SEARCH = Object.freeze({
 	]),
 	/** At most this many prefiltered hits are judged by the model per meme. */
 	maxJudged: 3,
-	/** Time budget for the search and its judges; past it the plugin generates instead. */
-	timeoutMs: 15_000,
+	/** Time budget for the search and its judges; past it the plugin generates instead.
+	 * Search is a slow agent run: a short budget keeps a miss from delaying every meme. */
+	timeoutMs: 5_000,
 });
 
 // #17 meme modes

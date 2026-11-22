@@ -29,6 +29,8 @@ import type {
 
 const cheap = { provider: "fixture", id: "cheap-model" };
 const other = { provider: "fixture", id: "other-model" };
+/** Plugin calls ask for thinking "off" when the model offers it (fixtures do). */
+const quiet = (model: object) => ({ ...model, thinkingLevel: "off" });
 const PNG = Buffer.from(
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
 	"base64",
@@ -67,6 +69,10 @@ function fixture(
 	options: {
 		memes?: unknown;
 		cheapSlot?: boolean;
+		/** Levels every catalogue model supports (default: "off" only). */
+		levels?: string[];
+		/** The host's thinking level for the cheap slot. */
+		cheapThinking?: string;
 		reply?: (
 			request: PluginInferenceRequest,
 			call: number,
@@ -135,11 +141,14 @@ function fixture(
 						models: [cheap, other].map((model) => ({
 							...model,
 							name: model.id,
-							supportedLevels: ["off"],
+							supportedLevels: options.levels ?? ["off"],
 						})),
 						slots: {
 							strong: null,
-							cheap: options.cheapSlot === false ? null : { model: cheap },
+							cheap:
+								options.cheapSlot === false
+									? null
+									: { model: cheap, thinkingLevel: options.cheapThinking },
 							vision: null,
 						},
 						defaults: null,
@@ -231,7 +240,7 @@ test("generate picks a meme, writes one line per box and starts its cooldown", a
 	for (const request of f.requests) {
 		assert.deepEqual(
 			request.model,
-			cheap,
+			quiet(cheap),
 			"no explicit model: the configured cheap slot",
 		);
 		assert.equal(request.purpose, "user");
@@ -467,7 +476,7 @@ test("model selection is explicit and failures are reported, not hidden", async 
 	await assert.rejects(a.call("generate", { prompt: "x" }), /Choose a model/);
 	await a.call("save-settings", { model: other });
 	await a.call<GeneratedMeme>("generate", { prompt: "x" });
-	assert.deepEqual(none.requests[0]!.model, other);
+	assert.deepEqual(none.requests[0]!.model, quiet(other));
 	await a.call("save-settings", { model: { provider: "fixture", id: "gone" } });
 	const sent = none.requests.length;
 	await assert.rejects(a.call("generate", { prompt: "x" }), /not available/);
@@ -1218,10 +1227,17 @@ test("rate stores the rating on the generated meme and rejects unknown ids", asy
 });
 
 type Judge = { safe?: boolean; relevant?: boolean; accurate?: boolean | null };
+/** How long the generation's model calls take in webFixture: longer than the search
+ * (a judge reply and a local image load), as a real model call is longer than those. */
+const GENERATION_LAG_MS = 200;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Waits longer than a generation's model calls, to see what it does after it lost. */
+const settle = () => sleep(GENERATION_LAG_MS * 2);
 async function webFixture(
 	t: TestContext,
 	hits: Record<string, unknown>[],
 	judge: (user: string) => Judge | "error" = () => ({}),
+	options: { generationFails?: boolean; judgeLagMs?: number } = {},
 ) {
 	const server = http.createServer((request, response) => {
 		if (request.url === "/ok.png") {
@@ -1238,7 +1254,12 @@ async function webFixture(
 	const searches: unknown[] = [];
 	const f = fixture(t, {
 		memes: [custom[0]],
-		reply: (request) => {
+		reply: async (request) => {
+			if (request.context.systemPrompt!.startsWith("You judge"))
+				await sleep(options.judgeLagMs ?? 0);
+			else if (options.generationFails)
+				return { stopReason: "error", errorMessage: "The model is down." };
+			else await sleep(GENERATION_LAG_MS);
 			// Hint and Think captions (#17) for the single meme the web fixture offers.
 			if (
 				/gives a hint|makes the learner think/.test(
@@ -1311,7 +1332,14 @@ test("web search: a judged hit with source text is shown as the answer, with cre
 	assert.equal(found.meme.source, "https://memes.example.test/drake");
 	assert.deepEqual(found.lines, []);
 	assert.equal((w.searches[0] as { safeSearch: boolean }).safeSearch, true);
-	assert.equal(w.requests.length, 1, "one judge call, no caption generation");
+	assert.equal(w.judged(), 1, "one judge call");
+	// The generation ran alongside the search and lost: nothing of it is kept.
+	await settle();
+	assert.equal(w.stored().usage?.["custom:proud-speech"], undefined);
+	assert.equal(
+		fs.existsSync(path.join(w.dataDirectory, GENERATED_FILE)),
+		false,
+	);
 	assert.deepEqual(
 		await w.call<MemeImage>("get-image", { id: found.meme.id }),
 		{
@@ -1395,7 +1423,7 @@ test("caption model: null uses the other steps' model; a set one writes the capt
 	for (const request of plain.requests)
 		assert.deepEqual(
 			request.model,
-			cheap,
+			quiet(cheap),
 			"null: the cheap slot for every step",
 		);
 
@@ -1411,7 +1439,7 @@ test("caption model: null uses the other steps' model; a set one writes the capt
 	assert.equal(fills.length, 1);
 	assert.deepEqual(
 		fills[0]!.model,
-		other,
+		quiet(other),
 		"the caption step uses the set model",
 	);
 	const rest = split.requests.filter((request) => !isFill(request));
@@ -1419,7 +1447,7 @@ test("caption model: null uses the other steps' model; a set one writes the capt
 	for (const request of rest)
 		assert.deepEqual(
 			request.model,
-			cheap,
+			quiet(cheap),
 			"the other steps keep the cheap slot",
 		);
 
@@ -1910,7 +1938,16 @@ test("fix(F): the search stage is reported only when a search runs", async (t) =
 	const stages = w.emitted.map(
 		(event) => (event.data as { stage: string }).stage,
 	);
-	assert.deepEqual(stages, ["reuse", "search"]);
+	// The generation runs beside the search, so its stages may follow the search's.
+	assert.deepEqual(stages.slice(0, 2), ["reuse", "search"]);
+	assert.equal(stages.filter((stage) => stage === "search").length, 1);
+	assert.ok(
+		w.emitted.every(
+			(event) =>
+				typeof (event.data as { elapsedMs?: unknown }).elapsedMs === "number",
+		),
+		"each stage says how long the request has run",
+	);
 	await w.call("save-settings", { mode: "hint" });
 	w.emitted.length = 0;
 	await w.call<GeneratedMeme>("generate", { ...ask, requestId: "w2" });
@@ -1940,6 +1977,103 @@ test("a web search that takes too long is skipped: the meme is generated instead
 	});
 	assert.equal(meme.meme.id, "custom:proud-speech");
 	assert.deepEqual(meme.lines, ["Jensen Huang backed CUDA. Legend!"]);
+});
+
+test("race: a web meme ready before the generated one wins, and the generation stops", async (t) => {
+	const w = await webFixture(
+		t,
+		[{ ...hit, title: "NVIDIA backed CUDA" }],
+		() => ({ accurate: true }),
+	);
+	await w.call("save-settings", { cooldownDays: 0 });
+	const found = await w.call<GeneratedMeme>("generate", ask);
+	assert.equal(found.meme.origin, "web");
+	const calls = w.requests.length;
+	await settle();
+	assert.equal(
+		w.requests.length,
+		calls,
+		"no model call after the web meme won",
+	);
+	const generation = w.requests.filter(
+		(request) => !request.context.systemPrompt!.startsWith("You judge"),
+	);
+	assert.ok(generation.length >= 1, "the generation had started");
+	assert.ok(
+		generation.every((request) => request.signal?.aborted),
+		"the generation's in-flight request was aborted",
+	);
+	assert.equal(w.stored().usage?.["custom:proud-speech"], undefined);
+	assert.equal(
+		fs.existsSync(path.join(w.dataDirectory, GENERATED_FILE)),
+		false,
+	);
+});
+
+test("race: a generated meme ready first ends the search: no judge call, no wait for the budget", async (t) => {
+	const f = fixture(t, { memes: [custom[0]] });
+	let searchStopped = false;
+	const web = f.start({
+		searchTimeoutMs: 10_000,
+		// Never answers; stops only when the race aborts it.
+		createSearchAgent: () => ({
+			find: ({ signal }) =>
+				new Promise((_, reject) =>
+					signal?.addEventListener("abort", () => {
+						searchStopped = true;
+						reject(signal.reason);
+					}),
+				),
+		}),
+	});
+	await web.call("save-settings", { ...offline, searchAgent: other });
+	const started = Date.now();
+	const meme = await web.call<GeneratedMeme>("generate", {
+		prompt: "Who backed CUDA?",
+	});
+	const elapsed = Date.now() - started;
+	assert.equal(meme.meme.id, "custom:proud-speech");
+	assert.ok(
+		elapsed < 5_000,
+		`answered in ${elapsed} ms, not after the 10 s budget`,
+	);
+	assert.equal(searchStopped, true, "the search was aborted");
+	assert.equal(
+		f.requests.some((request) =>
+			request.context.systemPrompt!.startsWith("You judge"),
+		),
+		false,
+		"no judge call",
+	);
+});
+
+test("race: a failed generation still takes a web meme that arrives; without one, its failure is thrown", async (t) => {
+	// The generation fails at once; the judged hit comes 100 ms later.
+	const w = await webFixture(
+		t,
+		[{ ...hit, title: "NVIDIA backed CUDA" }],
+		() => ({ accurate: true }),
+		{ generationFails: true, judgeLagMs: 100 },
+	);
+	const found = await w.call<GeneratedMeme>("generate", ask);
+	assert.equal(found.meme.origin, "web");
+
+	const none = await webFixture(t, [], () => ({}), { generationFails: true });
+	await assert.rejects(none.call("generate", ask), /The model is down\./);
+});
+
+test("thinking: a model that does not offer off gets the cheap slot's host level", async (t) => {
+	const f = fixture(t, {
+		memes: [custom[0]],
+		levels: ["low", "high"],
+		cheapThinking: "low",
+	});
+	const { call } = f.start();
+	await call("save-settings", offline);
+	await call<GeneratedMeme>("generate", { prompt: "Who backed CUDA?" });
+	assert.equal(f.requests.length, 2, "one caption request, one fact check");
+	for (const request of f.requests)
+		assert.deepEqual(request.model, { ...cheap, thinkingLevel: "low" });
 });
 
 test("fix(A): an earlier meme is reused before any web search", async (t) => {

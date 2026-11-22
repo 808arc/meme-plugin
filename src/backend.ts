@@ -446,6 +446,8 @@ export function activate(
 				signal,
 			});
 			alive();
+			// A reply that came after its request was aborted (#42: the race) is not used.
+			if (signal.aborted) throw new Error("The meme request was cancelled.");
 			if (reply.stopReason === "error" || reply.stopReason === "aborted")
 				throw new Error(
 					reply.errorMessage ||
@@ -479,6 +481,7 @@ export function activate(
 		concept: Concept,
 		ids: readonly string[],
 		memes: readonly Meme[],
+		signal: AbortSignal,
 	): Promise<string | undefined> {
 		const datedIds = new Set(
 			memes.filter((meme) => meme.dated).map((meme) => meme.id),
@@ -494,22 +497,28 @@ export function activate(
 		if (candidates.length < 2) return candidates[0];
 		const listed = candidates.map((id) => memes.find((m) => m.id === id)!);
 		try {
-			return await ask(purpose, model, pickRequest(concept, listed), (raw) => {
-				const choice =
-					raw && typeof raw === "object"
-						? (raw as { choice?: unknown }).choice
-						: undefined;
-				if (
-					typeof choice !== "number" ||
-					!Number.isInteger(choice) ||
-					choice < 1 ||
-					choice > candidates.length
-				)
-					throw new Error(
-						`choice must be a whole number from 1 to ${candidates.length}`,
-					);
-				return candidates[choice - 1]!;
-			});
+			return await ask(
+				purpose,
+				model,
+				pickRequest(concept, listed),
+				(raw) => {
+					const choice =
+						raw && typeof raw === "object"
+							? (raw as { choice?: unknown }).choice
+							: undefined;
+					if (
+						typeof choice !== "number" ||
+						!Number.isInteger(choice) ||
+						choice < 1 ||
+						choice > candidates.length
+					)
+						throw new Error(
+							`choice must be a whole number from 1 to ${candidates.length}`,
+						);
+					return candidates[choice - 1]!;
+				},
+				signal,
+			);
 		} catch (error) {
 			if (!(error instanceof RejectedReply)) throw error;
 			return pickMeme(candidates, state.usage, Date.now());
@@ -524,6 +533,7 @@ export function activate(
 		captionModel: PluginModelSpec,
 		meme: Meme,
 		concept: Concept,
+		signal: AbortSignal,
 	): Promise<Caption> {
 		let avoid: string | undefined;
 		// Shuffle: one tone per meme, kept across fact-check rewrites.
@@ -534,6 +544,7 @@ export function activate(
 				captionModel,
 				captionRequest({ meme, concept, tone, avoid }),
 				(raw) => parseCaption(raw, meme.caption.length),
+				signal,
 			);
 			// The image server draws while the fact check runs.
 			prefetchRendered(meme, caption.lines);
@@ -546,6 +557,7 @@ export function activate(
 					model,
 					agreementRequest({ concept, fact: caption.fact }),
 					parseAgreement,
+					signal,
 				));
 			if (verdict) return caption;
 			if (attempt >= FACT_CHECK.MAX_FACT_ATTEMPTS)
@@ -585,9 +597,15 @@ export function activate(
 	/** Request id of the running generate call; stage events carry it so a window
 	 * only follows its own request. Null when the caller sent none. */
 	let stageFor: string | null = null;
+	/** When the running generate call started: stage events carry the time since. */
+	let stageStart = 0;
 	const stage = (name: MemeStage) => {
 		if (stageFor === null || disposed || ctx.signal.aborted) return;
-		ctx.events.emit(STAGE_TOPIC, { requestId: stageFor, stage: name });
+		ctx.events.emit(STAGE_TOPIC, {
+			requestId: stageFor,
+			stage: name,
+			elapsedMs: Date.now() - stageStart,
+		});
 	};
 
 	/** Web search, when on and an agent is configured. Null means: generate instead.
@@ -597,6 +615,7 @@ export function activate(
 		purpose: PluginCallPurpose,
 		concept: Concept,
 		exclude: string | undefined,
+		stop?: AbortSignal,
 	): Promise<GeneratedMeme | null> {
 		const { webSearch, searchAgent, searchProvider } = state.settings;
 		if (!webSearch || (!searchAgent && searchProvider === "none")) return null;
@@ -614,7 +633,12 @@ export function activate(
 			() => timer.abort(new Error("The web search took too long.")),
 			options.searchTimeoutMs ?? WEB_SEARCH.timeoutMs,
 		);
-		const budget = AbortSignal.any([chainSignal(), timer.signal]);
+		// `stop`: the race with generation (#42) ends the search when generation is ready first.
+		const budget = AbortSignal.any([
+			chainSignal(),
+			timer.signal,
+			...(stop ? [stop] : []),
+		]);
 		try {
 			let hits: SearchHit[];
 			try {
@@ -667,6 +691,8 @@ export function activate(
 					alive();
 					continue;
 				}
+				// Generation may have been ready first: then this search leaves no trace.
+				if (budget.aborted) return null;
 				webFound.clear();
 				webFound.set(meme.id, meme);
 				return {
@@ -698,13 +724,19 @@ export function activate(
 
 	/** One meme for one question. Pipeline, in order; each step stops at its first hit:
 	 *  1. reuse an earlier meme for the same question and mode (#9);
-	 *  2. web search for an existing meme (#11): Answer mode only, and only when
-	 *     enabled and a search agent is configured;
-	 *  3. pick: own memes first by the own-memes share (#21), then the catalogue,
-	 *     through the pick step (#4), by joke structure (Vellum skill);
-	 *  4. caption: one tight line per box (#4 humor rule; #17 mode prompts);
-	 *  5. check: Answer runs the fact check (#7); Hint and Think run the no-answer
-	 *     check (#17).
+	 *  2 to 5 run as one race (#42). A web search (#11) takes part only in Answer
+	 *     mode, when enabled and a search agent is configured; the generation is:
+	 *     a. web search for an existing meme, judged and image-checked;
+	 *     b. pick: own memes first by the own-memes share (#21), then the catalogue,
+	 *        through the pick step (#4), by joke structure (Vellum skill);
+	 *     c. caption: one tight line per box (#4 humor rule; #17 mode prompts);
+	 *     d. check: Answer runs the fact check (#7); Hint and Think run the
+	 *        no-answer check (#17).
+	 *     A web meme wins only if it is ready before the generated one. Then the
+	 *     generation is aborted, and it marks no use and stores no meme. A generated
+	 *     meme that is ready first ends the search. If the search finds nothing, the
+	 *     generation is awaited. If the generation fails first, a web meme that still
+	 *     arrives is used; otherwise the failure is thrown.
 	 * `mode` is passed in, never read from settings here: automatic callers (teacher
 	 * tool, buttonless) always pass "answer". `labelled` (#32): the mode came from
 	 * Shuffle, so an Answer meme carries its mode too, for the label. */
@@ -789,105 +821,159 @@ export function activate(
 			};
 		}
 
-		// Source 4 of the README: an existing meme found on the web beats generating one.
-		// Hint and Think never show a web meme: its text would state the answer.
-		const web =
-			mode === "answer" ? await webResult(purpose, concept, exclude) : null;
-		if (web) return web;
-
-		const model = await resolveModel();
-		// #36: the caption step may use its own model; null: the same model as the rest.
-		const captionModel = state.settings.captionModel
-			? await resolveModel(state.settings.captionModel)
-			: model;
-		if (!memes.length)
-			throw new Error(
-				"The meme pool is empty. Enable the bundled catalogue or add custom memes.",
-			);
-		const tried = new Set<string>(exclude ? [exclude] : []);
-		// Never let exclusions empty the pool: a repeat beats no meme.
-		if (memes.every((meme) => tried.has(meme.id))) tried.clear();
-		let failure: unknown;
-		for (let attempt = 0; attempt < MEME_ATTEMPTS; attempt++) {
-			// Step 2: own memes first (#21, by the own-memes share), then the model
-			// chooses a fitting meme among those not cooling down (#4).
-			const candidates = memes.filter((meme) => !tried.has(meme.id));
-			stage("selecting");
-			const id = await choose(
-				purpose,
-				model,
-				concept,
-				preferredPool(
-					candidates.map((meme) => meme.id),
-					new Set(
-						candidates
-							.filter((meme) => meme.origin === "custom")
-							.map((meme) => meme.id),
+		// Steps 3 to 5 (generation). It runs at the same time as the web search below, and
+		// `signal` stops it when a web meme wins the race.
+		// Set once this generation has stored its meme: from then on it is the ready one.
+		let committed = false;
+		const make = async (signal: AbortSignal): Promise<GeneratedMeme> => {
+			const model = await resolveModel();
+			// #36: the caption step may use its own model; null: the same model as the rest.
+			const captionModel = state.settings.captionModel
+				? await resolveModel(state.settings.captionModel)
+				: model;
+			if (!memes.length)
+				throw new Error(
+					"The meme pool is empty. Enable the bundled catalogue or add custom memes.",
+				);
+			const tried = new Set<string>(exclude ? [exclude] : []);
+			// Never let exclusions empty the pool: a repeat beats no meme.
+			if (memes.every((meme) => tried.has(meme.id))) tried.clear();
+			let failure: unknown;
+			for (let attempt = 0; attempt < MEME_ATTEMPTS; attempt++) {
+				// Step 2: own memes first (#21, by the own-memes share), then the model
+				// chooses a fitting meme among those not cooling down (#4).
+				const candidates = memes.filter((meme) => !tried.has(meme.id));
+				stage("selecting");
+				const id = await choose(
+					purpose,
+					model,
+					concept,
+					preferredPool(
+						candidates.map((meme) => meme.id),
+						new Set(
+							candidates
+								.filter((meme) => meme.origin === "custom")
+								.map((meme) => meme.id),
+						),
+						state.usage,
+						Date.now(),
+						state.settings.ownMemesShare / 100,
 					),
-					state.usage,
-					Date.now(),
-					state.settings.ownMemesShare / 100,
-				),
-				memes,
-			);
-			const meme = memes.find((candidate) => candidate.id === id);
-			if (!meme) break;
-			tried.add(meme.id);
-			stage("writing");
-			// Step 4. Answer mode: then the fact check (#7); a meme whose fact cannot be
-			// made to agree is not shown. Hint and Think (#17): the no-answer check; a
-			// caption that gives the answer away is rejected and, after one correction,
-			// another meme is tried.
-			let caption: Caption;
-			try {
-				caption =
-					mode === "answer"
-						? await captionChecked(purpose, model, captionModel, meme, concept)
-						: await ask(
-								purpose,
-								captionModel,
-								modeFillRequest(mode, { meme, concept, early }),
-								(raw) => {
-									stage("checking");
-									return parseModeFilling(raw, meme.caption.length, options);
-								},
-							);
-				if (mode !== "answer") prefetchRendered(meme, caption.lines);
-			} catch (error) {
-				alive();
-				// A failed request (quota, network) is not the meme's fault: report it as is.
-				// A rejected caption is the reply's fault, not the meme's: try another meme.
-				if (!(error instanceof RejectedReply)) throw error;
-				failure = error;
-				continue;
+					memes,
+					signal,
+				);
+				const meme = memes.find((candidate) => candidate.id === id);
+				if (!meme) break;
+				tried.add(meme.id);
+				stage("writing");
+				// Step 4. Answer mode: then the fact check (#7); a meme whose fact cannot be
+				// made to agree is not shown. Hint and Think (#17): the no-answer check; a
+				// caption that gives the answer away is rejected and, after one correction,
+				// another meme is tried.
+				let caption: Caption;
+				try {
+					caption =
+						mode === "answer"
+							? await captionChecked(
+									purpose,
+									model,
+									captionModel,
+									meme,
+									concept,
+									signal,
+								)
+							: await ask(
+									purpose,
+									captionModel,
+									modeFillRequest(mode, { meme, concept, early }),
+									(raw) => {
+										stage("checking");
+										return parseModeFilling(raw, meme.caption.length, options);
+									},
+									signal,
+								);
+					if (mode !== "answer") prefetchRendered(meme, caption.lines);
+				} catch (error) {
+					alive();
+					// A failed request (quota, network) is not the meme's fault: report it as is.
+					// A rejected caption is the reply's fault, not the meme's: try another meme.
+					if (!(error instanceof RejectedReply)) throw error;
+					failure = error;
+					continue;
+				}
+				// "Once used, store it": only a meme that was actually produced starts its cooldown.
+				// Side effects only for the meme that is still wanted: a web meme may have won.
+				if (signal.aborted) throw new Error("The meme request was cancelled.");
+				markUsed(meme.id);
+				const stored: StoredMeme = {
+					meme: {
+						id: meme.id,
+						origin: meme.origin,
+						name: meme.name,
+						...(meme.source ? { source: meme.source } : {}),
+						boxes: meme.boxes,
+						hasImage: !!meme.image,
+					},
+					originalCaption: meme.caption,
+					lines: caption.lines,
+					fact: caption.fact,
+					...modeField(mode, labelled),
+				};
+				const entry = newEntry(stored, Date.now());
+				// Re-read: a rating may have been written while the model was answering.
+				writeGenerated(
+					ctx.dataDirectory,
+					recordFresh(readGenerated(ctx.dataDirectory), key, entry),
+				);
+				committed = true;
+				return { ...stored, concept, generatedId: entry.id };
 			}
-			// "Once used, store it": only a meme that was actually produced starts its cooldown.
-			markUsed(meme.id);
-			const stored: StoredMeme = {
-				meme: {
-					id: meme.id,
-					origin: meme.origin,
-					name: meme.name,
-					...(meme.source ? { source: meme.source } : {}),
-					boxes: meme.boxes,
-					hasImage: !!meme.image,
-				},
-				originalCaption: meme.caption,
-				lines: caption.lines,
-				fact: caption.fact,
-				...modeField(mode, labelled),
-			};
-			const entry = newEntry(stored, Date.now());
-			// Re-read: a rating may have been written while the model was answering.
-			writeGenerated(
-				ctx.dataDirectory,
-				recordFresh(readGenerated(ctx.dataDirectory), key, entry),
-			);
-			return { ...stored, concept, generatedId: entry.id };
+			throw failure instanceof Error
+				? failure
+				: new Error("No meme could be prepared.");
+		};
+
+		// Source 4 of the README (#11), now a race (#42): in Answer mode with a search
+		// configured, the web search runs at the same time as the generation above. A web
+		// meme wins only if it is ready before the generated one; then generation is
+		// aborted and stores nothing. A generated meme that is ready first stops the search.
+		// Hint and Think never show a web meme: its text would state the answer.
+		const searching = new AbortController();
+		const searched =
+			mode === "answer"
+				? webResult(purpose, concept, exclude, searching.signal).catch(
+						() => null,
+					)
+				: null;
+		const generating = new AbortController();
+		const generation = make(
+			AbortSignal.any([chainSignal(), generating.signal]),
+		);
+		// A generation that loses the race must not report an unhandled rejection.
+		generation.catch(() => {});
+		if (!searched) return generation;
+		const first = await Promise.race([
+			searched.then((meme) => ({ from: "web" as const, meme })),
+			generation.then(
+				(meme) => ({ from: "generation" as const, meme }),
+				(error: unknown) => ({ from: "failed" as const, error }),
+			),
+		]);
+		if (first.from === "generation") {
+			searching.abort();
+			return first.meme;
 		}
-		throw failure instanceof Error
-			? failure
-			: new Error("No meme could be prepared.");
+		if (first.from === "web" && first.meme) {
+			// Generation stored its meme already: that one stands, and the web meme is dropped.
+			if (committed) return generation;
+			generating.abort();
+			return first.meme;
+		}
+		if (first.from === "web") return generation;
+		// Generation failed first: a web meme that still arrives is used, as before.
+		const late = await searched;
+		if (late) return late;
+		throw first.error;
 	}
 
 	/** "Export my memes" (#21): copy custom-memes.json and its images into a new
@@ -1088,6 +1174,7 @@ export function activate(
 			return guarded(
 				async () => {
 					stageFor = typeof requestId === "string" ? requestId : null;
+					stageStart = Date.now();
 					const chat = chatKey(input);
 					const setting = state.settings.mode;
 					const position = shufflePosition.get(chat) ?? 0;
